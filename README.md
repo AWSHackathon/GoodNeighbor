@@ -1,23 +1,27 @@
 # Good Neighbor
 
-**AWSHackathon2026-GoodNeighbor** — AWS Hackathon 2026 neighborhood assistance map. Post help requests as map pins inside your geofenced area (Capitol Hill demo), and respond to neighbors' requests.
+**AWSHackathon2026-GoodNeighbor** — AWS Hackathon 2026 neighborhood assistance map. Sign in with Google, see nearby help requests on a map centered on your location, and respond to neighbors' requests.
+
+## Location
+
+The map centers on the user’s area—no fixed demo neighborhood. Resolution order: **device GPS** (browser permission) → **IP geolocation** → **manual ZIP** if GPS is denied or IP is wrong. Details are in [docs/PLAN.md](docs/PLAN.md#location-resolution).
 
 ## Stack
 
 | Layer | Technology |
 |-------|------------|
 | Frontend | Next.js (App Router), TypeScript, Tailwind CSS |
-| Auth | AWS Cognito (email sign-up/sign-in, Google OAuth) |
+| Auth | AWS Cognito (**Google OAuth primary**, email sign-up/sign-in) |
 | API | AWS Lambda + API Gateway |
 | Database | Amazon DynamoDB |
-| Maps / geo | Amazon Location Service |
+| Maps / geo | Amazon Location Service (map, Places, IP geolocation) |
 | Backend & hosting | AWS Amplify Gen 2, Amplify Hosting |
 
 ## Project status
 
 **Phase 0 (current):** Repo structure, README, and UI stubs. No AWS resources deployed yet.
 
-**Next (Phase 1):** Amplify Gen 2 backend, Cognito login/sign-up, DynamoDB profiles, Location map + geofence, Lambda API.
+**Next (Phase 1):** Amplify Gen 2 backend, Cognito + Google login, DynamoDB profiles, user-resolved map location, Lambda API.
 
 See [docs/PLAN.md](docs/PLAN.md) for the full architecture and implementation phases.
 
@@ -40,8 +44,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | Route | Description |
 |-------|-------------|
 | `/` | Landing page with logo |
-| `/login` | Sign in / create account (Cognito — Phase 1) |
-| `/map` | Map + requests (Phase 1+) |
+| `/login` | Sign in with Google or email (Cognito — Phase 1) |
+| `/map` | Map centered on your location + requests (Phase 1+) |
 
 ```bash
 npm run build   # production build
