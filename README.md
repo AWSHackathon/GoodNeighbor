@@ -1,10 +1,12 @@
 # Good Neighbor
 
-**AWSHackathon2026-GoodNeighbor** — AWS Hackathon 2026 neighborhood assistance map. Sign in with Google, see nearby help requests on a map centered on your location, and respond to neighbors' requests.
+**AWSHackathon2026-GoodNeighbor** — AWS Hackathon 2026 neighborhood assistance map. Sign in with Google, see nearby help requests on a map centered on your location, respond to neighbors, and coordinate meet-ups privately after you accept an offer.
 
 ## Location
 
 The map centers on the user’s area—no fixed demo neighborhood. Resolution order: **device GPS** (browser permission) → **IP geolocation** → **manual ZIP** if GPS is denied or IP is wrong. Details are in [docs/PLAN.md](docs/PLAN.md#location-resolution).
+
+**Privacy:** Neighbors never see your exact home pin or full address on the map. Request pins use a **buffer zone** (Marketplace-style approximate area). Optional **meeting place** hints stay vague publicly; exact location is shared only in a **private thread** after the requester accepts a helper. See [docs/PLAN.md — Location privacy](docs/PLAN.md#location-privacy).
 
 ## Stack
 
@@ -19,7 +21,7 @@ The map centers on the user’s area—no fixed demo neighborhood. Resolution or
 
 ## Project status
 
-**Phase 0 (current):** Repo structure, README, and UI stubs. No AWS resources deployed yet.
+**Phase 0 (current):** Repo structure, README, UI stubs, and `lib/` / `amplify/functions/` stubs for location privacy and coordination. No AWS resources deployed yet.
 
 **Next (Phase 1):** Amplify Gen 2 backend, Cognito + Google login, DynamoDB profiles, user-resolved map location, Lambda API.
 
@@ -45,7 +47,8 @@ Open [http://localhost:3000](http://localhost:3000).
 |-------|-------------|
 | `/` | Landing page with logo |
 | `/login` | Sign in with Google or email (Cognito — Phase 1) |
-| `/map` | Map centered on your location + requests (Phase 1+) |
+| `/map` | Map with obfuscated request area pins + request list (Phase 4+) |
+| `/requests/[id]/thread` | Private chat after accepting a helper (Phase 5) |
 
 ```bash
 npm run build   # production build
@@ -54,17 +57,20 @@ npm run lint    # ESLint
 
 ## Environment variables
 
-Copy `.env.example` to `.env.local` when needed. Secrets (Google OAuth, etc.) are stored in Amplify via `npx ampx sandbox secret set` — not in git.
+Copy `.env.example` to `.env.local` when needed. Set `NEXT_PUBLIC_API_URL` after Phase 1 deploy. Secrets (Google OAuth, etc.) are stored in Amplify via `npx ampx sandbox secret set` — not in git.
 
 ## Repository layout
 
 ```
-app/           # Next.js pages (landing, login, map)
-components/    # React components (Phase 1+)
-lib/           # API client, Amplify config (Phase 1+)
-amplify/       # Amplify Gen 2 backend (Phase 1+)
-docs/          # Architecture plan
-public/        # Static assets (logo)
+app/                    # Next.js pages (landing, login, map, thread stub)
+components/             # React components (Phase 1+)
+lib/
+  api/client.ts       # API client stubs (requests, thread, accept)
+  location/           # GPS/IP/ZIP resolve + public pin obfuscation
+  types/domain.ts     # Public vs private domain types
+amplify/functions/api/  # Lambda route stubs (Phase 1+)
+docs/                 # Architecture plan
+public/               # Static assets (logo)
 ```
 
 ## Git workflow
