@@ -89,6 +89,17 @@ Amplify Gen 2: auth, DynamoDB, Location, Lambda, API Gateway, Cognito UI, middle
 
 Create/list pins, geofence validation, respond flow, polish.
 
+## Git workflow (team + agent)
+
+Before every push to `origin/main`:
+
+1. `git fetch origin`
+2. `git pull --rebase origin main`
+3. Resolve conflicts if any; continue rebase
+4. `git push origin main`
+
+Do not force-push `main` without explicit team approval.
+
 ## Future
 
 Per-user geofences, live GPS, notifications, chat.

@@ -63,6 +63,17 @@ docs/          # Architecture plan
 public/        # Static assets (logo)
 ```
 
+## Git workflow
+
+When pushing changes to `main` (including agent-assisted commits):
+
+1. `git fetch origin`
+2. `git pull --rebase origin main` — integrate remote commits before pushing
+3. Resolve any merge conflicts, then `git rebase --continue`
+4. `git push origin main`
+
+Avoid force-pushing `main` unless explicitly agreed by the team.
+
 ## Team next steps
 
 1. Read [docs/PLAN.md](docs/PLAN.md).
