@@ -4,47 +4,94 @@ Architecture and implementation phases for the AWS Hackathon 2026 GoodNeightbor 
 
 ## Auth flow
 
+Primary sign-in is **Google OAuth** via Cognito (federated identity). Email/password remains available as a secondary path.
+
 ```mermaid
 flowchart LR
   Landing[Landing /] --> Login["/login"]
+  Login -->|Continue with Google| GoogleOAuth[Google OAuth]
   Login -->|sign up| CognitoSignUp[Cognito signUp]
   Login -->|sign in| CognitoSignIn[Cognito signIn]
+  GoogleOAuth --> CognitoFederated[Cognito federated sign-in]
+  CognitoFederated --> ProfileWrite[Profile in DynamoDB]
   CognitoSignUp --> Confirm[Email confirm if required]
-  Confirm --> ProfileWrite[Profile in DynamoDB]
+  Confirm --> ProfileWrite
   CognitoSignIn --> ProfileWrite
-  ProfileWrite --> Map["/map protected"]
+  ProfileWrite --> LocationPrompt[Resolve user location]
+  LocationPrompt --> Map["/map protected"]
 ```
 
 | Step | Route | Behavior |
 |------|-------|----------|
 | 1 | `app/page.tsx` | Logo, tagline, CTA **Sign in** → `/login` |
-| 2 | `app/(auth)/login/page.tsx` | Sign in + create account (Cognito); Google when configured |
-| 3 | After auth | `GET /profiles/me` → create/update profile in DynamoDB |
-| 4 | Redirect | Authenticated → `/map`; middleware blocks guests |
+| 2 | `app/(auth)/login/page.tsx` | **Continue with Google** (primary); email sign-in + create account (secondary) |
+| 3 | After auth | Cognito session (JWT); `GET /profiles/me` → create/update profile in DynamoDB |
+| 4 | Location | Resolve map center (see [Location resolution](#location-resolution)); store neighborhood/ZIP on profile when known |
+| 5 | Redirect | Authenticated → `/map` centered on resolved location; middleware blocks guests |
 
 | Store | What |
 |-------|------|
-| **Cognito** | Credentials, `sub`, email |
-| **DynamoDB** | `USER#<sub>` / `PROFILE` — email, displayName, createdAt |
+| **Cognito** | Credentials or Google federated identity, `sub`, email, name (from Google when used) |
+| **Google Cloud** | OAuth client (Web) — redirect URIs match Cognito Hosted UI / app callback |
+| **DynamoDB** | `USER#<sub>` / `PROFILE` — email, displayName, neighborhood, zipCode, lat/lng (approx), createdAt |
+
+### Google OAuth setup
+
+| Piece | Responsibility |
+|-------|----------------|
+| Google Cloud Console | OAuth 2.0 client (Web application); authorized redirect URIs for Cognito |
+| Cognito User Pool | Google identity provider; attribute mapping (email, name, `sub`) |
+| Amplify Auth | `signInWithRedirect` / Hosted UI for Google; secrets via `ampx sandbox secret set` |
+| App | Prominent **Continue with Google** on `/login`; handle callback and session refresh |
 
 ## Product (MVP)
 
 1. Landing → login page  
-2. Sign up / sign in (Cognito); profile in DynamoDB  
-3. Map home: left ~50% map (Capitol Hill default)  
-4. Create assistance request + pin on map  
-5. Pin must be inside `capitol-hill` geofence (Location Service)  
-6. See others' pins with author; respond to requests  
+2. Sign in with **Google** (primary) or email (Cognito); profile in DynamoDB  
+3. Map home: left ~50% map centered on **user-resolved location** (no fixed demo geofence)  
+4. Create assistance request + pin on map (within user's neighborhood / service area)  
+5. See others' pins with author; respond to requests  
+
+## Location resolution
+
+On first visit (and when location is stale or wrong), resolve where to center the map and which neighborhood bucket to use for queries.
+
+```mermaid
+flowchart TD
+  Start[Need map center] --> GPS[Browser Geolocation API]
+  GPS -->|granted + valid| UseGPS[Use lat/lng from device GPS]
+  GPS -->|denied / unavailable / timeout| IP[IP-based geolocation]
+  IP -->|reasonable accuracy| UseIP[Use IP-derived lat/lng + neighborhood]
+  IP -->|low confidence or user rejects| Manual[Manual ZIP code entry]
+  Manual --> GeocodeZIP[Geocode ZIP via Places]
+  GeocodeZIP --> UseZIP[Use ZIP center + store zip on profile]
+  UseGPS --> MapCenter[Center map + set query geofence key]
+  UseIP --> MapCenter
+  UseZIP --> MapCenter
+```
+
+| Priority | Source | Behavior |
+|----------|--------|----------|
+| 1 | **Device GPS** | `navigator.geolocation.getCurrentPosition` — prompt for location access; use coordinates when granted |
+| 2 | **IP geolocation** | Server or client IP lookup (e.g. Amazon Location / third-party) when GPS denied or fails |
+| 3 | **Manual ZIP** | User enters ZIP when IP is wrong or they want a different area; geocode to lat/lng and neighborhood label |
+
+| UX | Detail |
+|----|--------|
+| Permission copy | Explain why location helps show nearby requests |
+| Wrong location | **Change location** → re-run GPS, or enter ZIP |
+| Privacy | Store approximate area on profile; exact pin only when creating a post |
+| Map default | **No** hardcoded Capitol Hill or other demo geofence — always user-derived |
 
 ## Stack
 
 | Layer | Choice |
 |-------|--------|
 | Frontend | Next.js App Router + TypeScript + Tailwind |
-| Auth | Cognito + email + Google OAuth |
+| Auth | Cognito + **Google OAuth (primary)** + email |
 | API | Lambda + HTTP API + Cognito JWT authorizer |
 | Data | DynamoDB single-table + GSI by geofence |
-| Maps | Amazon Location Service (map + geofence) |
+| Maps | Amazon Location Service (map, Places, IP geolocation) |
 | Hosting | Amplify Hosting |
 
 ## UI routes
@@ -61,7 +108,7 @@ app/
 | Entity | PK | SK | GSI1 |
 |--------|----|----|------|
 | Profile | `USER#<sub>` | `PROFILE` | — |
-| HelpRequest | `REQUEST#<id>` | `METADATA` | `GEOFENCE#capitol-hill` / `STATUS#OPEN#<ts>` |
+| HelpRequest | `REQUEST#<id>` | `METADATA` | `GEOFENCE#<neighborhood-or-zip>` / `STATUS#OPEN#<ts>` |
 
 ## Lambda API
 
@@ -73,7 +120,7 @@ app/
 | POST | `/requests` |
 | POST | `/requests/:id/respond` |
 
-Capitol Hill center: `47.6253`, `-122.3222`, zoom `14`.
+Map center and zoom come from [Location resolution](#location-resolution) (GPS → IP → ZIP), not a fixed demo coordinate.
 
 ## Implementation phases
 
@@ -96,7 +143,7 @@ Deliverables:
   respond or claim, earn reputation.
 - Keep IAM scoped to AWS operators only; app users are not IAM users.
 - Maintain the current landing, login, and map stubs as the demo shell.
-- Decide the initial neighborhood demo area: `capitol-hill`.
+- No default geofence; location is user-resolved at runtime.
 
 Status: Done for the current scaffold.
 
@@ -111,10 +158,11 @@ Status: Done for the current scaffold.
 
 Deliverables:
 
-- Email sign-up/sign-in through Cognito.
-- Optional Google OAuth once credentials are configured.
-- Profile creation/update in DynamoDB after first login.
-- User attributes for display name, email, role, and neighborhood.
+- **Google sign-in** as the primary path (Cognito federated identity + Amplify Auth).
+- Email sign-up/sign-in through Cognito as secondary.
+- Google OAuth client + Cognito IdP configuration (redirect URIs, secrets).
+- Profile creation/update in DynamoDB after first login (including name/email from Google).
+- User attributes for display name, email, role, neighborhood, and zipCode.
 - Role distinction between resident, neighborhood moderator, and app admin.
 
 ### Phase 2 - Hosted website and navigation shell
@@ -148,7 +196,7 @@ Deliverables:
 - Support post types such as `give`, `need`, `borrow`, and `event`.
 - Browse posts as cards/list before map work is complete.
 - Store post status: open, claimed, fulfilled, expired.
-- Add seed/demo data for Capitol Hill.
+- Add seed/demo data keyed by neighborhood/ZIP (not a single fixed geofence).
 
 ### Phase 4 - Location, geocoding, and neighborhood map
 
@@ -156,16 +204,17 @@ Deliverables:
 
 | Area | Services incorporated |
 |------|-----------------------|
-| AWS services | Amazon Location Service maps, Places/geocoding, reverse geocoding, geofences, DynamoDB GSI by geofence |
-| Other services/tools | MapLibre GL or compatible map renderer, browser geolocation API, address privacy rules |
+| AWS services | Amazon Location Service maps, Places/geocoding, reverse geocoding, IP geolocation, DynamoDB GSI by neighborhood/ZIP |
+| Other services/tools | MapLibre GL or compatible map renderer, browser Geolocation API, ZIP entry UI, address privacy rules |
 
 Deliverables:
 
-- Render the Capitol Hill map centered at `47.6253`, `-122.3222`.
+- Implement [Location resolution](#location-resolution): GPS first, then IP, then manual ZIP.
+- Center the map on the resolved user location (no Capitol Hill or other hardcoded default).
+- **Change location** flow when GPS/IP is wrong (re-prompt GPS or enter ZIP).
+- Geocode ZIP to lat/lng and neighborhood label; persist on profile.
 - Let users drop or search for a location when creating a post.
-- Translate coordinates into a street address or approximate neighborhood label.
-- Validate that new pins fall inside the `capitol-hill` geofence.
-- Browse nearby posts as map pins and synchronized list/cards.
+- Browse nearby posts as map pins and synchronized list/cards (filter by user's neighborhood/ZIP bucket).
 
 ### Phase 5 - Responses, claims, and lightweight coordination
 
@@ -229,4 +278,4 @@ Do not force-push `main` without explicit team approval.
 
 ## Future
 
-Per-user geofences, live GPS, notifications, chat.
+Configurable per-neighborhood geofences (admin-drawn), continuous GPS updates, push notifications, chat.
