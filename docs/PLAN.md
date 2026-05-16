@@ -33,7 +33,7 @@ flowchart LR
 |-------|------|
 | **Cognito** | Credentials or Google federated identity, `sub`, email, name (from Google when used) |
 | **Google Cloud** | OAuth client (Web) — redirect URIs match Cognito Hosted UI / app callback |
-| **DynamoDB** | `USER#<sub>` / `PROFILE` — email, displayName, neighborhood, zipCode, lat/lng (approx), createdAt |
+| **DynamoDB** | `USER#<sub>` / `PROFILE` — email, displayName, neighborhood, zipCode, lat/lng (private, for map center), createdAt |
 
 ### Google OAuth setup
 
@@ -49,8 +49,42 @@ flowchart LR
 1. Landing → login page  
 2. Sign in with **Google** (primary) or email (Cognito); profile in DynamoDB  
 3. Map home: left ~50% map centered on **user-resolved location** (no fixed demo geofence)  
-4. Create assistance request + pin on map (within user's neighborhood / service area)  
-5. See others' pins with author; respond to requests  
+4. Create assistance request + **obfuscated** pin on map (approximate area only — see [Location privacy](#location-privacy))  
+5. See others' pins with author (public area only); respond to requests  
+6. Requester **accepts** one helper's offer → private thread opens to confirm pickup/meet-up details  
+7. Optional **meeting place** hint on the request (public, vague); exact address only in private chat after acceptance  
+
+## Location privacy
+
+Public surfaces never expose exact home coordinates. Behavior is modeled on **Facebook Marketplace**–style area pins: neighbors see *roughly where* help is needed, not a doxxable address.
+
+| Layer | Stored / used internally | Shown publicly |
+|-------|--------------------------|----------------|
+| User map center | GPS / IP / ZIP (full resolution for queries) | Neighborhood or ZIP label only; map centers on bucket, not exact home |
+| Request pin | True lat/lng (server-side, encrypted at rest) | **Obfuscated point**: random offset within a fixed-radius buffer (~0.25–0.5 mi / ~400–800 m) around the true location; same request always maps to the same public point (deterministic jitter from `requestId`) |
+| Meeting place | Optional free-text or Places search at create time | Public label only (e.g. "near Safeway on Broadway") — no street number unless user chooses a public landmark |
+| Exact address / door code | — | **Never** on map, list, or API fields returned to non-participants |
+
+```mermaid
+flowchart LR
+  Create[Create request] --> TrueLoc[Store true lat/lng server-side]
+  TrueLoc --> PublicPin[Derive public obfuscated pin]
+  PublicPin --> Map[List + map for neighbors]
+  Respond[Helper responds] --> Pending[Offer pending]
+  Pending --> Accept[Requester accepts one offer]
+  Accept --> Thread[Private thread]
+  Thread --> Exact[Share exact address / meet-up time]
+```
+
+| UX | Detail |
+|----|--------|
+| Pin appearance | Circle or fuzzy radius on map (buffer zone), not a precise rooftop marker |
+| Create flow | User picks area on map or search; copy explains the public pin will be approximate |
+| Meeting place | Optional field: "Where should we meet?" — shown on card; still vague publicly |
+| After acceptance | Requester and accepted helper get a **private chat** to agree on exact location, time, and contact |
+| Other responders | Not in the thread; request closes or marks other offers declined when one is accepted |
+
+**MVP rule:** Exact coordinates and full addresses exist only in DynamoDB fields omitted from public `GET /requests` and are writable only via the private thread after a match is accepted.
 
 ## Location resolution
 
@@ -78,10 +112,12 @@ flowchart TD
 
 | UX | Detail |
 |----|--------|
-| Permission copy | Explain why location helps show nearby requests |
+| Permission copy | Explain why location helps show nearby requests; GPS is used for *your* map center and queries, not published as your home pin |
 | Wrong location | **Change location** → re-run GPS, or enter ZIP |
-| Privacy | Store approximate area on profile; exact pin only when creating a post |
+| Privacy | Profile and browse APIs expose neighborhood/ZIP only; [Location privacy](#location-privacy) governs request pins |
 | Map default | **No** hardcoded Capitol Hill or other demo geofence — always user-derived |
+
+Resolution uses full accuracy **internally** (geofence queries, obfuscation seed). Anything returned to other users is [obfuscated](#location-privacy).
 
 ## Stack
 
@@ -101,24 +137,31 @@ app/
 ├── page.tsx                 # Landing → /login
 ├── (auth)/login/page.tsx    # Sign in + sign up
 └── (main)/map/page.tsx      # Split map (protected)
+    └── requests/[id]/thread  # Private chat after offer accepted (Phase 5)
 ```
 
 ## DynamoDB model
 
-| Entity | PK | SK | GSI1 |
-|--------|----|----|------|
-| Profile | `USER#<sub>` | `PROFILE` | — |
-| HelpRequest | `REQUEST#<id>` | `METADATA` | `GEOFENCE#<neighborhood-or-zip>` / `STATUS#OPEN#<ts>` |
+| Entity | PK | SK | GSI1 | Notes |
+|--------|----|----|------|-------|
+| Profile | `USER#<sub>` | `PROFILE` | — | Private lat/lng for map center; public neighborhood/ZIP only |
+| HelpRequest | `REQUEST#<id>` | `METADATA` | `GEOFENCE#<neighborhood-or-zip>` / `STATUS#OPEN#<ts>` | `trueLat`/`trueLng` (private); `publicLat`/`publicLng` (derived); optional `meetingPlaceLabel` |
+| Response | `REQUEST#<id>` | `RESPONSE#<responderSub>` | — | Status: `pending` \| `accepted` \| `declined` |
+| Thread | `REQUEST#<id>` | `THREAD#<acceptedSub>` | — | Private messages; exact location / meet-up details after acceptance |
+| Message | `REQUEST#<id>` | `MSG#<ts>#<id>` | — | Belongs to accepted requester ↔ helper pair only |
 
 ## Lambda API
 
-| Method | Path |
-|--------|------|
-| GET | `/profiles/me` |
-| PUT | `/profiles/me` |
-| GET | `/requests` |
-| POST | `/requests` |
-| POST | `/requests/:id/respond` |
+| Method | Path | Visibility |
+|--------|------|------------|
+| GET | `/profiles/me` | Owner |
+| PUT | `/profiles/me` | Owner |
+| GET | `/requests` | Public fields only (obfuscated pin, meeting place label) |
+| POST | `/requests` | Creates request; server derives public pin from true location |
+| POST | `/requests/:id/respond` | Creates pending offer |
+| POST | `/requests/:id/responses/:responseId/accept` | Requester accepts one helper; opens thread |
+| GET | `/requests/:id/thread` | Participants only (accepted requester + helper) |
+| POST | `/requests/:id/thread/messages` | Participants only — exact address / coordination |
 
 Map center and zoom come from [Location resolution](#location-resolution) (GPS → IP → ZIP), not a fixed demo coordinate.
 
@@ -139,8 +182,9 @@ list; and contribution history encourages takers to give back.
 
 Deliverables:
 
-- Confirm the MVP loop: sign in, post a give/request item, browse nearby posts,
-  respond or claim, earn reputation.
+- Confirm the MVP loop: sign in, post a give/request item, browse nearby posts
+  (obfuscated pins), respond, requester accepts one offer, private chat to confirm
+  location, earn reputation.
 - Keep IAM scoped to AWS operators only; app users are not IAM users.
 - Maintain the current landing, login, and map stubs as the demo shell.
 - No default geofence; location is user-resolved at runtime.
@@ -213,22 +257,27 @@ Deliverables:
 - Center the map on the resolved user location (no Capitol Hill or other hardcoded default).
 - **Change location** flow when GPS/IP is wrong (re-prompt GPS or enter ZIP).
 - Geocode ZIP to lat/lng and neighborhood label; persist on profile.
-- Let users drop or search for a location when creating a post.
-- Browse nearby posts as map pins and synchronized list/cards (filter by user's neighborhood/ZIP bucket).
+- Let users drop or search for a location when creating a post (true location stored server-side).
+- **Obfuscated public pins**: deterministic jitter within buffer radius; fuzzy circle on map (see [Location privacy](#location-privacy)).
+- Optional **meeting place** label on create (public, vague).
+- Browse nearby posts as obfuscated map pins and synchronized list/cards (filter by user's neighborhood/ZIP bucket).
+- Public `GET /requests` never returns `trueLat`/`trueLng`.
 
-### Phase 5 - Responses, claims, and lightweight coordination
+### Phase 5 - Responses, acceptance, and private coordination
 
-**Goal:** Let neighbors act on posts without building a full chat system first.
+**Goal:** Let neighbors act on posts and confirm exact meet-up details only after a trusted match.
 
 | Area | Services incorporated |
 |------|-----------------------|
-| AWS services | Lambda response endpoints, API Gateway, DynamoDB response/claim items, Cognito authorizer |
-| Other services/tools | In-app response UI, notification copy, moderation rules |
+| AWS services | Lambda response/accept/thread endpoints, API Gateway, DynamoDB response/thread/message items, Cognito authorizer |
+| Other services/tools | In-app response UI, private thread UI, notification copy, moderation rules |
 
 Deliverables:
 
-- Respond to a request or claim an offered item.
-- Show post author, responder, and response history.
+- Respond to a request or claim an offered item (offer status `pending`).
+- **Accept offer**: requester chooses one helper → status `accepted`, others `declined`; request moves to `claimed`.
+- **Private thread** between requester and accepted helper only — confirm exact address, time, and meet-up (not visible on map or to other responders).
+- Show post author and response list to requester; helpers see only their own offer state until accepted.
 - Prevent users from responding to their own posts where inappropriate.
 - Add basic moderation affordances for neighborhood admins.
 
@@ -259,7 +308,7 @@ Deliverables:
 
 Deliverables:
 
-- End-to-end demo script: login, create post, map pin, respond, leaderboard update.
+- End-to-end demo script: login, create post (obfuscated pin + optional meeting place), browse map, respond, accept offer, private chat to confirm location, leaderboard update.
 - CloudWatch logs for API and geofence failures.
 - Budget alerts for the hackathon AWS account.
 - Build/lint checks before demo.
@@ -278,4 +327,4 @@ Do not force-push `main` without explicit team approval.
 
 ## Future
 
-Configurable per-neighborhood geofences (admin-drawn), continuous GPS updates, push notifications, chat.
+Configurable per-neighborhood geofences (admin-drawn), continuous GPS updates, push notifications, rich chat (read receipts, images), adjustable obfuscation radius per neighborhood.
