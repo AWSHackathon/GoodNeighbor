@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AmplifyProvider } from "@/components/AmplifyProvider";
 import { Logo } from "@/components/Logo";
 
 export default function MainLayout({
@@ -19,7 +20,9 @@ export default function MainLayout({
           </Link>
         </nav>
       </header>
-      <div className="flex-1">{children}</div>
+      <AmplifyProvider>
+        <div className="flex-1">{children}</div>
+      </AmplifyProvider>
     </div>
   );
 }
