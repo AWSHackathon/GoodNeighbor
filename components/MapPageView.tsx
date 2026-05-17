@@ -43,6 +43,7 @@ export function MapPageView() {
   const [requestsError, setRequestsError] = useState<string | null>(null);
   const [requestsLoading, setRequestsLoading] = useState(true);
   const [extraGeofenceKeys, setExtraGeofenceKeys] = useState<string[]>([]);
+  const [profileReady, setProfileReady] = useState(false);
 
   const browseCenter = useMemo(
     () => resolveBrowseCenter(profile, location, pickedPin, mapCenter),
@@ -82,6 +83,8 @@ export function MapPageView() {
         setProfile(p);
       } catch {
         /* profile loads on login */
+      } finally {
+        setProfileReady(true);
       }
     })();
   }, []);
@@ -90,18 +93,36 @@ export function MapPageView() {
     async (resolved: ResolvedLocation, _mapCenter: Coordinates) => {
       setLocation(resolved);
       setMapCenter({ lat: resolved.lat, lng: resolved.lng });
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              locationSource: resolved.source,
+              ...(resolved.source === "gps"
+                ? { lat: resolved.lat, lng: resolved.lng }
+                : { lat: undefined, lng: undefined }),
+              ...(resolved.zipCode != null ? { zipCode: resolved.zipCode } : {}),
+              ...(resolved.neighborhood != null
+                ? { neighborhood: resolved.neighborhood }
+                : {}),
+            }
+          : prev,
+      );
 
       try {
         const token = await getIdToken();
-        const updated = await putProfileMe(token, {
-          lat: resolved.lat,
-          lng: resolved.lng,
-          zipCode: resolved.zipCode,
-          neighborhood: resolved.neighborhood,
-        });
-        setProfile(updated);
+        const patch: Partial<UserProfile> = {
+          locationSource: resolved.source,
+        };
+        if (resolved.source === "gps") {
+          patch.lat = resolved.lat;
+          patch.lng = resolved.lng;
+        }
+        if (resolved.zipCode) patch.zipCode = resolved.zipCode;
+        if (resolved.neighborhood) patch.neighborhood = resolved.neighborhood;
+        await putProfileMe(token, patch);
       } catch {
-        /* non-blocking */
+        /* non-blocking persist */
       }
     },
     [],
@@ -146,6 +167,7 @@ export function MapPageView() {
           <div className="mt-4 min-h-0 flex-1">
             <NeighborhoodMap
               profile={profile}
+              profileReady={profileReady}
               requests={requests}
               onLocationResolved={handleLocationResolved}
               onRequestsChange={setRequests}
@@ -187,6 +209,7 @@ export function MapPageView() {
           <div className="mt-4 min-h-0 flex-1 overflow-hidden">
             <RequestListPanel
               requests={requests}
+              browseCenter={browseCenter}
               loading={requestsLoading}
               error={requestsError}
               refreshKey={refreshKey}
