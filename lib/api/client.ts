@@ -13,6 +13,7 @@ import type {
   UserProfile,
   UserProfileWithMetrics,
 } from "@/lib/types/domain";
+import { normalizeLeaderboardResponse } from "@/lib/leaderboard/paginate";
 import type { LeaderboardResponse } from "@/lib/types/leaderboard";
 
 /** Always read fresh from amplify_outputs.json (avoids stale URL after sandbox redeploy). */
@@ -200,11 +201,23 @@ export async function fulfillRequest(
 
 export async function getLeaderboard(
   authToken: string,
-  params: { neighborhood: string; period?: "all" | "week" },
+  params: {
+    neighborhood: string;
+    period?: "all" | "week";
+    page?: number;
+    limit?: number;
+  },
 ): Promise<LeaderboardResponse> {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 10;
   const q = new URLSearchParams({
     neighborhood: params.neighborhood,
     period: params.period ?? "all",
+    page: String(page),
+    limit: String(limit),
   });
-  return apiFetch<LeaderboardResponse>(`/leaderboard?${q}`, { authToken });
+  const raw = await apiFetch<LeaderboardResponse>(`/leaderboard?${q}`, {
+    authToken,
+  });
+  return normalizeLeaderboardResponse(raw, page, limit);
 }
