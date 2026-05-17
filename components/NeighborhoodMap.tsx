@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { listRequests } from "@/lib/api/client";
+import { getUserSubFromIdToken } from "@/lib/auth/jwt";
 import { getIdToken } from "@/lib/auth/session";
+import { resolveUserDisplayPin } from "@/lib/location/displayPin";
+import type { UserDisplayPin } from "@/lib/location/displayPin";
 import {
-  addPinLayers,
+  applyMapPinLayers,
+  clearUserLocationLayer,
   createAmazonApiKeyMap,
   ensureMapLoaded,
-  setDraftPinLayer,
 } from "@/lib/map/amazonMap";
 import { buildPinsFromRequests } from "@/lib/map/pins";
 import {
@@ -44,7 +47,10 @@ type NeighborhoodMapProps = {
   pinPickEnabled?: boolean;
   pickedPin?: Coordinates | null;
   onPickPin?: (coords: Coordinates) => void;
-  onLocationResolved?: (location: ResolvedLocation) => void;
+  onLocationResolved?: (
+    location: ResolvedLocation,
+    displayPin: Coordinates,
+  ) => void;
   onRequestsChange?: (requests: PublicHelpRequest[]) => void;
   onRequestsError?: (message: string | null) => void;
 };
@@ -69,10 +75,12 @@ export function NeighborhoodMap({
   const onPickPinRef = useRef(onPickPin);
   const pickedPinRef = useRef(pickedPin);
   const requestsRef = useRef(requests);
+  const displayPinRef = useRef<UserDisplayPin | null>(null);
 
   const [status, setStatus] = useState<MapStatus>("loading");
   const [error, setError] = useState<string | null>(null);
   const [location, setLocation] = useState<ResolvedLocation | null>(null);
+  const [displayPin, setDisplayPin] = useState<UserDisplayPin | null>(null);
   const [zipInput, setZipInput] = useState("");
   const [mapConfig, setMapConfig] = useState<MapConfig>({ mode: "none" });
 
@@ -82,28 +90,36 @@ export function NeighborhoodMap({
   onPickPinRef.current = onPickPin;
   pickedPinRef.current = pickedPin;
   requestsRef.current = requests;
+  displayPinRef.current = displayPin;
 
-  const refreshMapLayers = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !mapReadyRef.current) return;
+  const refreshMapLayers = useCallback(
+    (userPinOverride?: UserDisplayPin | null) => {
+      const map = mapRef.current;
+      if (!map || !mapReadyRef.current) return;
 
-    const pins = buildPinsFromRequests(requestsRef.current);
-    addPinLayers(map, PIN_SOURCE_ID, pins);
+      const userPin = userPinOverride ?? displayPinRef.current;
+      const draft = pickedPinRef.current;
 
-    const pin = pickedPinRef.current;
-    setDraftPinLayer(map, pin ? [pin.lng, pin.lat] : null);
-
-    if (pin && map.loaded()) {
-      map.easeTo({
-        center: [pin.lng, pin.lat],
-        duration: 400,
+      applyMapPinLayers(map, {
+        requestPins: buildPinsFromRequests(requestsRef.current),
+        requestSourceId: PIN_SOURCE_ID,
+        userCoordinates: userPin ? [userPin.lng, userPin.lat] : null,
+        draftCoordinates: draft ? [draft.lng, draft.lat] : null,
       });
-    }
-  }, []);
+
+      if (draft && map.loaded()) {
+        map.easeTo({
+          center: [draft.lng, draft.lat],
+          duration: 400,
+        });
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     refreshMapLayers();
-  }, [requests, pickedPin, refreshMapLayers]);
+  }, [requests, pickedPin, displayPin, refreshMapLayers]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -153,7 +169,11 @@ export function NeighborhoodMap({
   }, [geofence, refreshKey, fetchRequests]);
 
   const initMap = useCallback(
-    async (center: Coordinates, config: MapConfig) => {
+    async (
+      center: Coordinates,
+      config: MapConfig,
+      userPin?: UserDisplayPin | null,
+    ) => {
       if (!containerRef.current) return;
 
       mapReadyRef.current = false;
@@ -180,7 +200,7 @@ export function NeighborhoodMap({
         await ensureMapLoaded(map, center);
 
         mapReadyRef.current = true;
-        refreshMapLayers();
+        refreshMapLayers(userPin ?? displayPinRef.current);
         setStatus("ready");
         return;
       }
@@ -202,7 +222,7 @@ export function NeighborhoodMap({
           await ensureMapLoaded(map, center);
 
           mapReadyRef.current = true;
-          refreshMapLayers();
+          refreshMapLayers(userPin ?? displayPinRef.current);
           setStatus("ready");
           return;
         } catch (amplifyErr) {
@@ -211,7 +231,7 @@ export function NeighborhoodMap({
           const outputs = mod.default ?? mod;
           const fallback = resolveApiKeyMapConfig(outputs);
           if (!fallback) throw amplifyErr;
-          return initMap(center, fallback);
+          return initMap(center, fallback, userPin);
         }
       }
 
@@ -223,7 +243,27 @@ export function NeighborhoodMap({
   const startWithLocation = useCallback(
     async (resolved: ResolvedLocation) => {
       setLocation(resolved);
-      onLocationResolvedRef.current?.(resolved);
+      setStatus("loading");
+
+      let pin: UserDisplayPin;
+      try {
+        const token = await getIdToken();
+        const userSub = getUserSubFromIdToken(token);
+        pin = await resolveUserDisplayPin(resolved.lat, resolved.lng, userSub);
+      } catch {
+        pin = {
+          lat: resolved.lat,
+          lng: resolved.lng,
+          bufferRadiusMeters: 0,
+        };
+      }
+
+      displayPinRef.current = pin;
+      setDisplayPin(pin);
+      onLocationResolvedRef.current?.(resolved, {
+        lat: pin.lat,
+        lng: pin.lng,
+      });
 
       const config = await resolveMapConfig();
       setMapConfig(config);
@@ -232,8 +272,7 @@ export function NeighborhoodMap({
         return;
       }
 
-      setStatus("loading");
-      await initMap(resolved, config);
+      await initMap({ lat: pin.lat, lng: pin.lng }, config, pin);
     },
     [initMap],
   );
@@ -263,7 +302,10 @@ export function NeighborhoodMap({
     void bootstrap();
     return () => {
       mapReadyRef.current = false;
-      mapRef.current?.remove();
+      if (mapRef.current) {
+        clearUserLocationLayer(mapRef.current);
+        mapRef.current.remove();
+      }
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
@@ -378,6 +420,7 @@ export function NeighborhoodMap({
         <p className="mt-2 text-xs text-slate-500">
           Amazon Location · {requests.length} request
           {requests.length === 1 ? "" : "s"} in area
+          {displayPin ? " · blue = your approximate area" : ""}
           {pickedPin ? " · orange = new request location" : ""}
         </p>
       )}
