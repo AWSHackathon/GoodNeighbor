@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-// @ts-ignore: global CSS is handled by Next.js
+import { AmplifyProvider } from "@/components/AmplifyProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased">
+        <AmplifyProvider>{children}</AmplifyProvider>
+      </body>
     </html>
   );
 }
