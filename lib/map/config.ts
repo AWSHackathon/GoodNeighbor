@@ -2,6 +2,8 @@
  * Amazon Location map configuration: Amplify Geo (sandbox) or API key (local dev).
  */
 
+import { probeApiKeyMapAccess } from "@/lib/map/validateApiKey";
+
 export type MapAuthMode = "amplify" | "api-key" | "none";
 
 export interface ApiKeyMapConfig {
@@ -98,22 +100,61 @@ export function resolveApiKeyMapConfig(outputs?: unknown): ApiKeyMapConfig | nul
   };
 }
 
+/** True when the browser has a Cognito session (for Amplify Geo map tiles). */
+export async function hasAmplifyAuthSession(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    await import("@/lib/amplify/configure-client");
+    const { fetchAuthSession } = await import("aws-amplify/auth");
+    const session = await fetchAuthSession();
+    return Boolean(session.tokens?.idToken);
+  } catch {
+    return false;
+  }
+}
+
+function isSandboxGeoDeployed(outputs: unknown): boolean {
+  return hasAmplifyGeo(outputs) && !isPlaceholderAmplifyOutputs(outputs);
+}
+
 /**
- * Prefer a working API key when present; otherwise Cognito-backed Amplify Geo.
+ * Prefer Cognito-backed GoodNeighborMap when sandbox geo is deployed and the user
+ * is signed in. Use an API key only when it passes tile/style probes; otherwise
+ * fall back to Amplify Geo so a mis-scoped key in .env.local does not block the map.
  */
 export async function resolveMapConfig(): Promise<MapConfig> {
+  let outputs: unknown;
   try {
     const mod = await import("@/amplify_outputs.json");
-    const outputs = mod.default ?? mod;
-
-    const apiKeyConfig = resolveApiKeyMapConfig(outputs);
-    if (apiKeyConfig) return apiKeyConfig;
-
-    if (hasAmplifyGeo(outputs) && !isPlaceholderAmplifyOutputs(outputs)) {
-      return { mode: "amplify", hasGeo: true };
-    }
+    outputs = mod.default ?? mod;
   } catch {
-    // outputs not generated yet
+    outputs = undefined;
+  }
+
+  const sandboxGeo = outputs ? isSandboxGeoDeployed(outputs) : false;
+
+  if (sandboxGeo && (await hasAmplifyAuthSession())) {
+    return { mode: "amplify", hasGeo: true };
+  }
+
+  const apiKeyConfig = resolveApiKeyMapConfig(outputs);
+  if (
+    apiKeyConfig &&
+    (await probeApiKeyMapAccess(
+      apiKeyConfig.region,
+      apiKeyConfig.styleName,
+      apiKeyConfig.apiKey,
+    ))
+  ) {
+    return apiKeyConfig;
+  }
+
+  if (sandboxGeo) {
+    return { mode: "amplify", hasGeo: true };
+  }
+
+  if (apiKeyConfig) {
+    return apiKeyConfig;
   }
 
   return getPublicMapConfig();
