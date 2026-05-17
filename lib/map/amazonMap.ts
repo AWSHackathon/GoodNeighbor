@@ -228,13 +228,8 @@ export function applyMapPinLayers(
 ): void {
   whenStyleReady(map, () => {
     addPinLayersNow(map, options.requestSourceId, options.requestPins);
-    setUserLocationCircleLayerNow(map, options.userCoordinates);
+    removeUserLocationCircleLayer(map);
     setDraftPinLayerNow(map, options.draftCoordinates);
-
-    const userLayerId = `${USER_PIN_SOURCE}-circle`;
-    if (options.userCoordinates && map.getLayer(userLayerId)) {
-      map.moveLayer(userLayerId);
-    }
     const draftLayerId = `${DRAFT_PIN_SOURCE}-circle`;
     if (options.draftCoordinates && map.getLayer(draftLayerId)) {
       map.moveLayer(draftLayerId);
