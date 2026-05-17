@@ -22,8 +22,11 @@ This writes `amplify_outputs.json` for the Next.js app. The map on `/map` uses A
 ## API key alternative (no sandbox)
 
 1. In [Amazon Location Service](https://console.aws.amazon.com/location/home), create a **map** (e.g. style **Standard** for API keys).
-2. Create an **API key** scoped to that map.
-3. Add to `.env.local`:
+2. Create a **place index** (Places) if you want ZIP geocode on `/map`.
+3. Create an **API key** with:
+   - **Maps** resource `arn:aws:geo-maps:<region>::provider/default` and actions **`geo-maps:*`** (or at least tile + style actions). A key scoped only to **Places / Geocode** loads the style descriptor but returns **403** on tiles.
+   - Optional: **Places** resource with **Geocode** for ZIP lookup on `/map`.
+4. Add to `.env.local`:
 
 ```bash
 NEXT_PUBLIC_AMAZON_LOCATION_API_KEY=your-key

@@ -31,6 +31,10 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Geocode failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    const hint =
+      message.includes("403") || message.includes("401")
+        ? " Ensure your API key is linked to a Places resource with the Geocode action in the Location Service console."
+        : "";
+    return NextResponse.json({ error: message + hint }, { status: 502 });
   }
 }

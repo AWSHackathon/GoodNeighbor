@@ -8,6 +8,7 @@ import {
   hasAmplifyGeo,
   type MapConfig,
 } from "@/lib/map/config";
+import { assertMapTileAccess } from "@/lib/map/validateApiKey";
 import { buildSamplePins } from "@/lib/map/samplePins";
 import {
   resolveLocationFromZip,
@@ -62,6 +63,8 @@ export function NeighborhoodMap() {
       const centerLngLat: [number, number] = [center.lng, center.lat];
 
       if (config.mode === "api-key") {
+        await assertMapTileAccess(config.region, config.apiKey);
+
         const map = new maplibregl.Map({
           container: containerRef.current,
           center: centerLngLat,
@@ -71,6 +74,18 @@ export function NeighborhoodMap() {
             config.styleName,
             config.apiKey,
           ),
+        });
+        map.on("error", (event) => {
+          const status =
+            event.error && "status" in event.error
+              ? (event.error as { status?: number }).status
+              : undefined;
+          if (status === 403) {
+            setError(
+              "Map tiles were denied (403). Update your API key to allow geo-maps:* on the default map resource, or use npm run sandbox.",
+            );
+            setStatus("error");
+          }
         });
         mapRef.current = map;
         wireSamplePins(map, center);
@@ -128,11 +143,10 @@ export function NeighborhoodMap() {
       const resolved = await resolveUserLocation();
       setLocation(resolved);
       await initMap(resolved, config);
-    } catch (locErr) {
-      const message =
-        locErr instanceof Error ? locErr.message : "Could not detect location";
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not load map";
       setError(message);
-      setStatus("needs-location");
+      setStatus(message.includes("map tiles") ? "error" : "needs-location");
     }
   }, [initMap, resolveAmplifyConfig]);
 

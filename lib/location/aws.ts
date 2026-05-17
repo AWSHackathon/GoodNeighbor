@@ -30,12 +30,13 @@ export async function geocodePostalCode(
   if (!apiKey) return null;
 
   const region = getAwsRegion();
-  const res = await fetch(`https://places.geo.${region}.amazonaws.com/v2/geocode`, {
+  // Places v2 expects the key as a query param, not x-api-key (see AWS Geocode API).
+  const url = new URL(`https://places.geo.${region}.amazonaws.com/v2/geocode`);
+  url.searchParams.set("key", apiKey);
+
+  const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       QueryText: zipCode.trim(),
       Filter: { IncludeCountries: ["USA"] },
@@ -45,6 +46,10 @@ export async function geocodePostalCode(
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
+    if (res.status === 403 || res.status === 401) {
+      const fallback = await geocodePostalCodeFallback(zipCode);
+      if (fallback) return fallback;
+    }
     throw new Error(`Places geocode ${res.status}: ${text}`);
   }
 
@@ -57,5 +62,31 @@ export async function geocodePostalCode(
     lat,
     lng,
     label: place.Title ?? place.Address?.Label,
+  };
+}
+
+/**
+ * Dev fallback when the API key is map-only (no Places Geocode on the key).
+ * Production should use Amazon Location Places on the API key or sandbox.
+ */
+async function geocodePostalCodeFallback(
+  zipCode: string,
+): Promise<{ lat: number; lng: number; label?: string } | null> {
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(zipCode.trim())}&countrycodes=us&format=json&limit=1`,
+    {
+      headers: {
+        "User-Agent": "GoodNeighbor-Hackathon/1.0 (local dev zip fallback)",
+      },
+    },
+  );
+  if (!res.ok) return null;
+  const results = (await res.json()) as { lat: string; lon: string; display_name?: string }[];
+  const hit = results[0];
+  if (!hit) return null;
+  return {
+    lat: Number.parseFloat(hit.lat),
+    lng: Number.parseFloat(hit.lon),
+    label: hit.display_name,
   };
 }
