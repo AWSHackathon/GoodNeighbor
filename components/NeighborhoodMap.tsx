@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
-import { listRequests } from "@/lib/api/client";
+import { listRequestsInArea } from "@/lib/api/client";
 import { getUserSubFromIdToken } from "@/lib/auth/jwt";
 import { getIdToken } from "@/lib/auth/session";
 import { resolveUserDisplayPin } from "@/lib/location/displayPin";
@@ -13,6 +13,7 @@ import {
   createAmazonApiKeyMap,
   ensureMapLoaded,
 } from "@/lib/map/amazonMap";
+import { filterRequestsNearby } from "@/lib/location/nearby";
 import { buildPinsFromRequests } from "@/lib/map/pins";
 import {
   hasAmplifyGeo,
@@ -48,7 +49,8 @@ const PIN_SOURCE_ID = "good-neighbor-requests";
 
 type NeighborhoodMapProps = {
   profile?: UserProfile | null;
-  geofence: string;
+  geofenceKeys: string[];
+  nearbyCenter?: Coordinates | null;
   refreshKey: number;
   requests: PublicHelpRequest[];
   pinPickEnabled?: boolean;
@@ -60,11 +62,15 @@ type NeighborhoodMapProps = {
   ) => void;
   onRequestsChange?: (requests: PublicHelpRequest[]) => void;
   onRequestsError?: (message: string | null) => void;
+  onRequestsLoadingChange?: (loading: boolean) => void;
+  geofenceKeysSignature: string;
+  nearbyCenterSignature: string;
 };
 
 export function NeighborhoodMap({
   profile = null,
-  geofence,
+  geofenceKeys,
+  nearbyCenter = null,
   refreshKey,
   requests,
   pinPickEnabled = false,
@@ -73,15 +79,20 @@ export function NeighborhoodMap({
   onLocationResolved,
   onRequestsChange,
   onRequestsError,
+  onRequestsLoadingChange,
+  geofenceKeysSignature,
+  nearbyCenterSignature,
 }: NeighborhoodMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapReadyRef = useRef(false);
-  const geofenceRef = useRef(geofence);
+  const geofenceKeysRef = useRef(geofenceKeys);
+  const nearbyCenterRef = useRef(nearbyCenter);
   const profileRef = useRef(profile);
   const onLocationResolvedRef = useRef(onLocationResolved);
   const onRequestsChangeRef = useRef(onRequestsChange);
   const onRequestsErrorRef = useRef(onRequestsError);
+  const onRequestsLoadingChangeRef = useRef(onRequestsLoadingChange);
   const onPickPinRef = useRef(onPickPin);
   const pickedPinRef = useRef(pickedPin);
   const requestsRef = useRef(requests);
@@ -97,11 +108,13 @@ export function NeighborhoodMap({
   const [zipInput, setZipInput] = useState("");
   const [mapConfig, setMapConfig] = useState<MapConfig>({ mode: "none" });
 
-  geofenceRef.current = geofence;
+  geofenceKeysRef.current = geofenceKeys;
+  nearbyCenterRef.current = nearbyCenter;
   profileRef.current = profile;
   onLocationResolvedRef.current = onLocationResolved;
   onRequestsChangeRef.current = onRequestsChange;
   onRequestsErrorRef.current = onRequestsError;
+  onRequestsLoadingChangeRef.current = onRequestsLoadingChange;
   onPickPinRef.current = onPickPin;
   pickedPinRef.current = pickedPin;
   requestsRef.current = requests;
@@ -157,16 +170,20 @@ export function NeighborhoodMap({
     };
   }, [pinPickEnabled, status]);
 
-  const fetchRequests = useCallback(async (fence: string) => {
-    if (!fence || fence === "unknown") {
+  const fetchRequests = useCallback(async (keys: string[]) => {
+    if (!keys.length) {
       onRequestsChangeRef.current?.([]);
       onRequestsErrorRef.current?.(null);
+      onRequestsLoadingChangeRef.current?.(false);
       return;
     }
+    onRequestsLoadingChangeRef.current?.(true);
     try {
       const token = await getIdToken();
-      const data = await listRequests(token, { geofence: fence });
-      onRequestsChangeRef.current?.(data);
+      const data = await listRequestsInArea(token, keys);
+      onRequestsChangeRef.current?.(
+        filterRequestsNearby(data, nearbyCenterRef.current),
+      );
       onRequestsErrorRef.current?.(null);
     } catch (err) {
       const message =
@@ -174,13 +191,15 @@ export function NeighborhoodMap({
       console.warn("Could not load map pins", message);
       onRequestsChangeRef.current?.([]);
       onRequestsErrorRef.current?.(message);
+    } finally {
+      onRequestsLoadingChangeRef.current?.(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!mapReady || !geofence) return;
-    void fetchRequests(geofence);
-  }, [geofence, refreshKey, mapReady, fetchRequests]);
+    if (!mapReady || !geofenceKeysSignature) return;
+    void fetchRequests(geofenceKeysRef.current);
+  }, [geofenceKeysSignature, nearbyCenterSignature, refreshKey, mapReady, fetchRequests]);
 
   const resolvePinnedMapConfig = useCallback(async (): Promise<MapConfig> => {
     if (pinnedConfigRef.current) return pinnedConfigRef.current;
@@ -232,7 +251,7 @@ export function NeighborhoodMap({
             mapReadyRef.current = true;
             setMapReady(true);
             refreshMapLayers(userPin ?? displayPinRef.current);
-            void fetchRequests(geofenceRef.current);
+            void fetchRequests(geofenceKeysRef.current);
             setStatus("ready");
             return;
           } catch (apiKeyErr) {
@@ -276,7 +295,7 @@ export function NeighborhoodMap({
           mapReadyRef.current = true;
           setMapReady(true);
           refreshMapLayers(userPin ?? displayPinRef.current);
-          void fetchRequests(geofenceRef.current);
+          void fetchRequests(geofenceKeysRef.current);
           setStatus("ready");
           return;
         }
@@ -338,7 +357,7 @@ export function NeighborhoodMap({
             duration: 0,
           });
         }
-        void fetchRequests(geofenceRef.current);
+        void fetchRequests(geofenceKeysRef.current);
         return;
       }
 
