@@ -26,6 +26,8 @@ export interface PublicHelpRequest {
   createdAt: string;
   /** Present on list when the viewer is the requester. */
   isOwn?: boolean;
+  /** DynamoDB geofence index key (helps client re-query after create). */
+  geofence?: string;
 }
 
 /** POST /requests body — true location never stored on the client after submit. */
