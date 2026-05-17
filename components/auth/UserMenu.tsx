@@ -4,17 +4,34 @@ import { getCurrentUser, signOut } from "aws-amplify/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { getProfileMe } from "@/lib/api/client";
+import { getIdToken } from "@/lib/auth/session";
 
 export function UserMenu() {
   const router = useRouter();
   const [signedIn, setSignedIn] = useState(false);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    void getCurrentUser()
-      .then(() => setSignedIn(true))
-      .catch(() => setSignedIn(false))
-      .finally(() => setChecking(false));
+    void (async () => {
+      try {
+        await getCurrentUser();
+        setSignedIn(true);
+        try {
+          const token = await getIdToken();
+          const profile = await getProfileMe(token);
+          setDisplayName(profile.displayName);
+        } catch {
+          setDisplayName(null);
+        }
+      } catch {
+        setSignedIn(false);
+        setDisplayName(null);
+      } finally {
+        setChecking(false);
+      }
+    })();
   }, []);
 
   async function handleSignOut() {
@@ -35,12 +52,19 @@ export function UserMenu() {
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => void handleSignOut()}
-      className="text-slate-500 hover:text-slate-700"
-    >
-      Sign out
-    </button>
+    <div className="flex items-center gap-3">
+      {displayName ? (
+        <span className="hidden text-sm text-slate-600 sm:inline">
+          {displayName}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => void handleSignOut()}
+        className="text-slate-500 hover:text-slate-700"
+      >
+        Sign out
+      </button>
+    </div>
   );
 }
