@@ -1,13 +1,10 @@
 import Link from "next/link";
+import { RequestThreadView } from "@/components/RequestThreadView";
 
 type ThreadPageProps = {
   params: Promise<{ id: string }>;
 };
 
-/**
- * Private coordination after requester accepts a helper offer.
- * Exact address and meet-up time — not shown on the public map.
- */
 export default async function RequestThreadPage({ params }: ThreadPageProps) {
   const { id } = await params;
 
@@ -23,17 +20,13 @@ export default async function RequestThreadPage({ params }: ThreadPageProps) {
         Private coordination
       </p>
       <h1 className="mt-2 text-xl font-semibold text-slate-900">
-        Request {id}
+        Request thread
       </h1>
       <p className="mt-2 text-slate-600">
-        After you accept a neighbor&apos;s offer, this thread opens so you can
-        confirm the exact meet-up location and time. Only you and the accepted
-        helper can see messages here.
+        Share exact meet-up location and time here. Only you and the accepted
+        helper can see this chat.
       </p>
-      <div className="mt-8 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
-        Thread UI and API — Phase 5 (
-        <code className="text-xs">GET/POST /requests/:id/thread</code>)
-      </div>
+      <RequestThreadView requestId={id} />
     </div>
   );
 }
