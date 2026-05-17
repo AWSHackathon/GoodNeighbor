@@ -60,6 +60,8 @@ export interface PrivateThread {
   messages: ThreadMessage[];
 }
 
+export type UserRole = "resident" | "moderator" | "admin";
+
 /** Profile fields safe to expose to other users. */
 export interface PublicProfile {
   displayName: string;
@@ -69,8 +71,12 @@ export interface PublicProfile {
 
 /** Owner-only profile (map center not published as a pin). */
 export interface UserProfile extends PublicProfile {
+  sub: string;
   email: string;
+  role: UserRole;
   /** Private — used for map center and geofence queries only. */
   lat?: number;
   lng?: number;
+  createdAt: string;
+  updatedAt?: string;
 }
