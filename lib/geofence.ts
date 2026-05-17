@@ -19,8 +19,7 @@ export function geofenceKeyForRequestPin(lat: number, lng: number): string {
 }
 
 /**
- * True map position for browse/nearby filters — prefer GPS and picked pin over
- * the fuzzed blue display pin so list queries match where posts are stored.
+ * Map position for browse/nearby filters — picked pin, then true GPS (same as blue pin).
  */
 export function resolveBrowseCenter(
   profile: Pick<UserProfile, "lat" | "lng"> | null,
