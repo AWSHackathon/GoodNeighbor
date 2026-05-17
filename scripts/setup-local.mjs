@@ -41,16 +41,28 @@ function getApiEndpointFromOutputs() {
 }
 
 const apiEndpoint = getApiEndpointFromOutputs();
-if (apiEndpoint && existsSync(envLocal)) {
-  let env = readFileSync(envLocal, "utf8");
-  const line = `NEXT_PUBLIC_API_URL=${apiEndpoint}`;
-  if (/^NEXT_PUBLIC_API_URL=/m.test(env)) {
-    env = env.replace(/^NEXT_PUBLIC_API_URL=.*$/m, line);
-  } else {
-    env = `${env.trimEnd()}\n${line}\n`;
+const localMockLine = "NEXT_PUBLIC_LOCAL_API_URL=http://127.0.0.1:3000/api";
+
+function upsertEnvLine(env, key, value) {
+  const line = `${key}=${value}`;
+  if (new RegExp(`^${key}=`, "m").test(env)) {
+    return env.replace(new RegExp(`^${key}=.*$`, "m"), line);
   }
-  writeFileSync(envLocal, env);
-  console.log(`Set NEXT_PUBLIC_API_URL from amplify_outputs.json`);
+  return `${env.trimEnd()}\n${line}\n`;
+}
+
+if (existsSync(envLocal)) {
+  let env = readFileSync(envLocal, "utf8");
+  env = upsertEnvLine(env, "NEXT_PUBLIC_LOCAL_API_URL", "http://127.0.0.1:3000/api");
+  if (apiEndpoint) {
+    env = upsertEnvLine(env, "NEXT_PUBLIC_API_URL", apiEndpoint);
+    writeFileSync(envLocal, env);
+    console.log("Set NEXT_PUBLIC_API_URL from amplify_outputs.json (deployed API)");
+    console.log("Set NEXT_PUBLIC_LOCAL_API_URL for /api/leaderboard mock");
+  } else {
+    writeFileSync(envLocal, env);
+    console.log("Set NEXT_PUBLIC_LOCAL_API_URL for /api mock routes");
+  }
 }
 
 console.log("\nLocal dev:");
