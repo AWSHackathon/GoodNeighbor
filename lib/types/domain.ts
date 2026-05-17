@@ -85,6 +85,11 @@ export interface UserProfile extends PublicProfile {
   /** Private — used for map center and geofence queries only. */
   lat?: number;
   lng?: number;
+  /**
+   * How lat/lng were produced. Only `gps` coords are used for the private map pin on reload;
+   * ZIP/IP centroids stay on zipCode for geofence but are not trusted as your exact position.
+   */
+  locationSource?: "gps" | "zip" | "ip";
   createdAt: string;
   updatedAt?: string;
 }
