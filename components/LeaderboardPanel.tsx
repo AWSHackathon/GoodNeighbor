@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getLeaderboard } from "@/lib/api/client";
 import { getIdToken } from "@/lib/auth/session";
+import { canonicalLeaderboardGeofence } from "@/lib/geofence";
 import { getMockLeaderboard } from "@/lib/leaderboard/mockData";
-import { normalizeLeaderboardResponse } from "@/lib/leaderboard/paginate";
 import type {
   LeaderboardPeriod,
   LeaderboardResponse,
 } from "@/lib/types/leaderboard";
-import { canonicalLeaderboardGeofence } from "@/lib/geofence";
 import { LEADERBOARD_PAGE_SIZE } from "@/lib/types/leaderboard";
 
 type LeaderboardPanelProps = {
@@ -18,6 +17,11 @@ type LeaderboardPanelProps = {
   refreshKey: number;
 };
 
+const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
+  { value: "all", label: "All time" },
+  { value: "week", label: "This week" },
+];
+
 function resolveQueryGeofence(neighborhood: string): string {
   if (!neighborhood || neighborhood === "unknown") {
     return "capitol-hill";
@@ -25,35 +29,62 @@ function resolveQueryGeofence(neighborhood: string): string {
   return canonicalLeaderboardGeofence(neighborhood);
 }
 
-const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
-  { value: "all", label: "All time" },
-  { value: "week", label: "This week" },
-];
+function demoLeaderboard(
+  queryGeofence: string,
+  period: LeaderboardPeriod,
+  page: number,
+  neighborhoodLabel: string,
+): LeaderboardResponse {
+  const mock = getMockLeaderboard(
+    queryGeofence,
+    period,
+    page,
+    LEADERBOARD_PAGE_SIZE,
+  );
+  return {
+    ...mock,
+    neighborhoodLabel: neighborhoodLabel || mock.neighborhoodLabel,
+  };
+}
+
+function hasVisibleRows(response: LeaderboardResponse): boolean {
+  return (response.entries?.length ?? 0) > 0;
+}
 
 export function LeaderboardPanel({
   neighborhood,
   neighborhoodLabel,
   refreshKey,
 }: LeaderboardPanelProps) {
+  const queryGeofence = resolveQueryGeofence(neighborhood);
   const [period, setPeriod] = useState<LeaderboardPeriod>("all");
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<LeaderboardResponse | null>(null);
-  const [usingMock, setUsingMock] = useState(false);
+  const [data, setData] = useState<LeaderboardResponse>(() =>
+    demoLeaderboard(queryGeofence, "all", 1, neighborhoodLabel),
+  );
+  const [usingMock, setUsingMock] = useState(true);
+  const loadGeneration = useRef(0);
 
   useEffect(() => {
     setPage(1);
   }, [neighborhood, period, refreshKey]);
 
   const load = useCallback(async () => {
-    const queryGeofence = resolveQueryGeofence(neighborhood);
+    const generation = ++loadGeneration.current;
+    const demo = demoLeaderboard(
+      queryGeofence,
+      period,
+      page,
+      neighborhoodLabel,
+    );
 
-    if (!neighborhood || neighborhood === "unknown") {
-      setData(
-        getMockLeaderboard(queryGeofence, period, page, LEADERBOARD_PAGE_SIZE),
-      );
-      setUsingMock(true);
-      return;
-    }
+    const applyIfCurrent = (next: LeaderboardResponse, mock: boolean) => {
+      if (generation !== loadGeneration.current) return;
+      setData(next);
+      setUsingMock(mock);
+    };
+
+    applyIfCurrent(demo, true);
 
     try {
       const token = await getIdToken();
@@ -63,62 +94,28 @@ export function LeaderboardPanel({
         page,
         limit: LEADERBOARD_PAGE_SIZE,
       });
-      const normalized = normalizeLeaderboardResponse(
-        {
-          ...apiData,
-          neighborhoodLabel:
-            neighborhoodLabel || apiData.neighborhoodLabel,
-        },
-        page,
-        LEADERBOARD_PAGE_SIZE,
-      );
-      if (
-        normalized.pagination.totalCount === 0 &&
-        queryGeofence === "capitol-hill"
-      ) {
-        setData(
-          getMockLeaderboard(
-            "capitol-hill",
-            period,
-            page,
-            LEADERBOARD_PAGE_SIZE,
-          ),
-        );
-        setUsingMock(true);
-        return;
+
+      const withLabel: LeaderboardResponse = {
+        ...apiData,
+        neighborhoodLabel:
+          neighborhoodLabel || apiData.neighborhoodLabel,
+      };
+
+      if (hasVisibleRows(withLabel)) {
+        applyIfCurrent(withLabel, false);
+      } else {
+        applyIfCurrent(demo, true);
       }
-      setData(normalized);
-      setUsingMock(false);
     } catch {
-      setData(
-        getMockLeaderboard(
-          queryGeofence,
-          period,
-          page,
-          LEADERBOARD_PAGE_SIZE,
-        ),
-      );
-      setUsingMock(true);
+      applyIfCurrent(demo, true);
     }
-  }, [neighborhood, neighborhoodLabel, period, page]);
+  }, [queryGeofence, neighborhoodLabel, period, page]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const queryGeofence = resolveQueryGeofence(neighborhood);
-  const display = normalizeLeaderboardResponse(
-    data ??
-      getMockLeaderboard(
-        queryGeofence,
-        period,
-        page,
-        LEADERBOARD_PAGE_SIZE,
-      ),
-    page,
-    LEADERBOARD_PAGE_SIZE,
-  );
-
+  const display = data;
   const { pagination } = display;
 
   return (
@@ -150,7 +147,7 @@ export function LeaderboardPanel({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-auto px-4 py-2 sm:px-6">
-          {display.entries.length === 0 ? (
+          {!hasVisibleRows(display) ? (
             <p className="py-8 text-center text-sm text-slate-500">
               No contributions yet. Fulfill a request to appear here.
             </p>
@@ -180,7 +177,7 @@ export function LeaderboardPanel({
                       {row.requestsCompleted}
                     </td>
                     <td className="py-2.5 text-right tabular-nums text-slate-700">
-                      {row.hoursContributed.toFixed(1)}
+                      {Number(row.hoursContributed ?? 0).toFixed(1)}
                     </td>
                   </tr>
                 ))}
@@ -189,7 +186,7 @@ export function LeaderboardPanel({
           )}
         </div>
 
-        {pagination.totalCount > 0 ? (
+        {pagination && pagination.totalCount > 0 ? (
           <nav
             className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-2 sm:px-6"
             aria-label="Leaderboard pagination"
@@ -240,11 +237,11 @@ export function LeaderboardPanel({
           {period === "week" && display.weekId
             ? `Week ${display.weekId} · `
             : null}
-          {pagination.totalCount > 0
+          {pagination && pagination.totalCount > 0
             ? `${pagination.totalCount} neighbor${pagination.totalCount === 1 ? "" : "s"} ranked · `
             : null}
           {usingMock
-            ? "Showing demo data until API is deployed"
+            ? "Showing demo neighbors (run npm run seed:mock for live data)"
             : "Updates when requests are fulfilled"}
         </p>
       </div>
