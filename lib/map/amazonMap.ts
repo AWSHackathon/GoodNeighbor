@@ -239,9 +239,13 @@ export function applyMapPinLayers(
     if (options.draftCoordinates && map.getLayer(draftLayerId)) {
       map.moveLayer(draftLayerId);
     }
-    const requestLayerId = `${options.requestSourceId}-circles`;
-    if (options.requestPins.length > 0 && map.getLayer(requestLayerId)) {
-      map.moveLayer(requestLayerId);
+    const requestCenterLayerId = `${options.requestSourceId}-circles`;
+    const requestBufferLayerId = `${options.requestSourceId}-buffer`;
+    if (options.requestPins.length > 0 && map.getLayer(requestBufferLayerId)) {
+      map.moveLayer(requestBufferLayerId);
+    }
+    if (options.requestPins.length > 0 && map.getLayer(requestCenterLayerId)) {
+      map.moveLayer(requestCenterLayerId);
     }
 
     void setUserLocationLayer(map, options.userCoordinates);
@@ -263,6 +267,9 @@ function addPinLayersNow(
   sourceId: string,
   pins: MapPin[],
 ): void {
+  const bufferLayerId = `${sourceId}-buffer`;
+  const centerLayerId = `${sourceId}-circles`;
+
   const features = pins.map((pin, index) => ({
     type: "Feature" as const,
     id: index,
@@ -273,28 +280,40 @@ function addPinLayersNow(
     properties: {
       title: pin.title,
       address: pin.address ?? "",
+      bufferM: pin.bufferRadiusMeters ?? 500,
     },
   }));
 
+  const collection = { type: "FeatureCollection" as const, features };
+
   if (map.getSource(sourceId)) {
-    (map.getSource(sourceId) as GeoJSONSource).setData({
-      type: "FeatureCollection",
-      features,
-    });
+    (map.getSource(sourceId) as GeoJSONSource).setData(collection);
     return;
   }
 
-  map.addSource(sourceId, {
-    type: "geojson",
-    data: { type: "FeatureCollection", features },
-  });
+  map.addSource(sourceId, { type: "geojson", data: collection });
 
   map.addLayer({
-    id: `${sourceId}-circles`,
+    id: bufferLayerId,
     type: "circle",
     source: sourceId,
     paint: {
-      "circle-radius": 12,
+      // Approximate ~400–800 m privacy buffer at neighborhood zoom
+      "circle-radius": 46,
+      "circle-color": "#0d9488",
+      "circle-opacity": 0.2,
+      "circle-stroke-width": 1,
+      "circle-stroke-color": "#0d9488",
+      "circle-stroke-opacity": 0.35,
+    },
+  });
+
+  map.addLayer({
+    id: centerLayerId,
+    type: "circle",
+    source: sourceId,
+    paint: {
+      "circle-radius": 10,
       "circle-color": "#0d9488",
       "circle-stroke-width": 2,
       "circle-stroke-color": "#ffffff",
