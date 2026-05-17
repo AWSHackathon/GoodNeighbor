@@ -95,19 +95,37 @@ export function resolveGeofenceKey(
   return keys[0] ?? "unknown";
 }
 
+/**
+ * Demo seed (`npm run seed:mock`) writes leaderboard rows under `capitol-hill`.
+ * Profiles often resolve to ZIP `98102` or a loc bucket — alias those to the seed key.
+ */
+const LEADERBOARD_GEOFENCE_ALIASES: Record<string, string> = {
+  "98102": "capitol-hill",
+  [geofenceLocBucket(DEMO_SEED_CENTER.lat, DEMO_SEED_CENTER.lng)]: "capitol-hill",
+};
+
+/** Map ZIP / loc bucket to neighborhood slug where demo leaderboard is seeded. */
+export function canonicalLeaderboardGeofence(key: string): string {
+  return LEADERBOARD_GEOFENCE_ALIASES[key] ?? key;
+}
+
 /** Leaderboard stays on neighborhood / ZIP when the profile has one. */
 export function resolveLeaderboardGeofenceKey(
   profile: Pick<UserProfile, "neighborhood" | "zipCode" | "lat" | "lng"> | null,
   location?: ResolvedLocation | null,
 ): string {
-  if (profile?.neighborhood) return slugNeighborhood(profile.neighborhood);
-  if (profile?.zipCode) return profile.zipCode;
-  if (location?.zipCode) return location.zipCode;
-  if (location?.neighborhood) return slugNeighborhood(location.neighborhood);
+  if (profile?.neighborhood) {
+    return canonicalLeaderboardGeofence(slugNeighborhood(profile.neighborhood));
+  }
+  if (profile?.zipCode) return canonicalLeaderboardGeofence(profile.zipCode);
+  if (location?.zipCode) return canonicalLeaderboardGeofence(location.zipCode);
+  if (location?.neighborhood) {
+    return canonicalLeaderboardGeofence(slugNeighborhood(location.neighborhood));
+  }
   const lat = location?.lat ?? profile?.lat;
   const lng = location?.lng ?? profile?.lng;
   if (lat != null && lng != null) {
-    return geofenceLocBucket(lat, lng);
+    return canonicalLeaderboardGeofence(geofenceLocBucket(lat, lng));
   }
   return "unknown";
 }
