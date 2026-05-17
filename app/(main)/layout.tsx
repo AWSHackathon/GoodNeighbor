@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AmplifyProvider } from "@/components/AmplifyProvider";
+import { UserMenu } from "@/components/auth/UserMenu";
 import { Logo } from "@/components/Logo";
 
 export default function MainLayout({
@@ -15,14 +15,10 @@ export default function MainLayout({
           <Link href="/map" className="font-medium text-slate-700 hover:text-teal-600">
             Map
           </Link>
-          <Link href="/login" className="text-slate-500 hover:text-slate-700">
-            Sign in
-          </Link>
+          <UserMenu />
         </nav>
       </header>
-      <AmplifyProvider>
-        <div className="flex-1">{children}</div>
-      </AmplifyProvider>
+      <div className="flex-1">{children}</div>
     </div>
   );
 }
