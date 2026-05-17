@@ -10,5 +10,6 @@ export function buildPinsFromRequests(requests: PublicHelpRequest[]): MapPin[] {
       address:
         r.meetingPlaceLabel ??
         `Approximate area (~${Math.round(r.bufferRadiusMeters)}m buffer)`,
+      bufferRadiusMeters: r.bufferRadiusMeters,
     }));
 }
