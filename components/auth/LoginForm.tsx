@@ -8,8 +8,10 @@ import {
 } from "aws-amplify/auth";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ensureUserProfile } from "@/lib/auth/profile";
+import { waitForOAuthRedirect } from "@/lib/auth/oauth-redirect";
+import { isSignedIn } from "@/lib/auth/session";
 
 type AuthMode = "signIn" | "signUp" | "confirm";
 
@@ -26,18 +28,73 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function finishSignIn() {
-    await ensureUserProfile();
+  const finishSignIn = useCallback(async () => {
+    try {
+      await ensureUserProfile();
+    } catch (err) {
+      console.error("Profile sync failed", err);
+    }
     router.push(nextPath);
-  }
+  }, [router, nextPath]);
+
+  // Already signed in (e.g. returned to /login) — go to the app
+  useEffect(() => {
+    const code = searchParams.get("code");
+    if (code) return;
+
+    void (async () => {
+      if (await isSignedIn()) {
+        await finishSignIn();
+      }
+    })();
+  }, [searchParams, finishSignIn]);
+
+  useEffect(() => {
+    const oauthError = searchParams.get("error");
+    const oauthDescription = searchParams.get("error_description");
+    if (oauthError) {
+      const message = oauthDescription
+        ? decodeURIComponent(oauthDescription.replace(/\+/g, " "))
+        : oauthError;
+      setError(message);
+      setLoading(false);
+    }
+  }, [searchParams]);
+
+  // Complete Google redirect when Cognito returns ?code=... on /login
+  useEffect(() => {
+    const code = searchParams.get("code");
+    if (!code) return;
+
+    setLoading(true);
+    setError(null);
+
+    return waitForOAuthRedirect(
+      code,
+      () => finishSignIn(),
+      (message) => {
+        setError(message);
+        setLoading(false);
+      },
+    );
+  }, [searchParams, finishSignIn]);
 
   async function handleGoogle() {
     setError(null);
     setLoading(true);
     try {
+      if (await isSignedIn()) {
+        await finishSignIn();
+        return;
+      }
       await signInWithRedirect({ provider: "Google" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign-in failed");
+      const message = err instanceof Error ? err.message : "Google sign-in failed";
+      if (message.toLowerCase().includes("already a signed in user")) {
+        await finishSignIn();
+        return;
+      }
+      setError(message);
       setLoading(false);
     }
   }
@@ -102,8 +159,15 @@ export function LoginForm() {
     }
   }
 
+  const completingOAuth = Boolean(searchParams.get("code")) && loading;
+
   return (
     <div className="space-y-6">
+      {completingOAuth && (
+        <p className="rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-800">
+          Finishing Google sign-in…
+        </p>
+      )}
       <button
         type="button"
         onClick={() => void handleGoogle()}
