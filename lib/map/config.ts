@@ -45,6 +45,14 @@ export function hasAmplifyGeo(outputs: unknown): boolean {
   return Boolean(geo?.maps?.default);
 }
 
+/** True when `amplify_outputs.json` is still the setup template, not a sandbox deploy. */
+export function isPlaceholderAmplifyOutputs(outputs: unknown): boolean {
+  if (!outputs || typeof outputs !== "object") return true;
+  const poolId = (outputs as { auth?: { user_pool_id?: string } }).auth
+    ?.user_pool_id;
+  return !poolId || poolId === "REPLACE_AFTER_SANDBOX";
+}
+
 type GeoOutputs = {
   geo?: {
     aws_region?: string;
@@ -75,14 +83,17 @@ export function resolveApiKeyMapConfig(outputs?: unknown): ApiKeyMapConfig | nul
   const apiKey = process.env.NEXT_PUBLIC_AMAZON_LOCATION_API_KEY?.trim();
   if (!apiKey) return null;
 
-  const geo = outputs ? getAmplifyGeoMapSettings(outputs) : null;
+  const envRegion = process.env.NEXT_PUBLIC_AWS_REGION?.trim();
+  const geo =
+    outputs && !isPlaceholderAmplifyOutputs(outputs)
+      ? getAmplifyGeoMapSettings(outputs)
+      : null;
+
   return {
     mode: "api-key",
     apiKey,
-    region:
-      geo?.region ??
-      process.env.NEXT_PUBLIC_AWS_REGION?.trim() ??
-      "us-east-1",
+    // API keys are regional; env wins over template amplify_outputs geo (often us-west-2).
+    region: envRegion ?? geo?.region ?? "us-east-1",
     styleName: "Standard",
   };
 }
@@ -98,7 +109,7 @@ export async function resolveMapConfig(): Promise<MapConfig> {
     const apiKeyConfig = resolveApiKeyMapConfig(outputs);
     if (apiKeyConfig) return apiKeyConfig;
 
-    if (hasAmplifyGeo(outputs)) {
+    if (hasAmplifyGeo(outputs) && !isPlaceholderAmplifyOutputs(outputs)) {
       return { mode: "amplify", hasGeo: true };
     }
   } catch {
