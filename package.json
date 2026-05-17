@@ -5,14 +5,20 @@
   "scripts": {
     "setup": "npm install && node scripts/setup-local.mjs",
     "dev": "next dev --hostname 127.0.0.1 -p 3000",
+    "prebuild": "node scripts/setup-local.mjs",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 -p 3000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "sandbox": "npx ampx sandbox"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@aws-amplify/geo": "^3.0.80",
+    "aws-amplify": "^6.14.4",
+    "maplibre-gl": "^2.4.0",
+    "maplibre-gl-js-amplify": "^4.0.2",
     "next": "^15.3.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
