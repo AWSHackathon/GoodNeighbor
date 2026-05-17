@@ -33,6 +33,12 @@ const table = new Table(dataStack, "GoodNeighborTable", {
   removalPolicy: RemovalPolicy.DESTROY,
 });
 
+table.addGlobalSecondaryIndex({
+  indexName: "GSI1",
+  partitionKey: { name: "GSI1PK", type: AttributeType.STRING },
+  sortKey: { name: "GSI1SK", type: AttributeType.STRING },
+});
+
 backend.apiFunction.addEnvironment("TABLE_NAME", table.tableName);
 table.grantReadWriteData(backend.apiFunction.resources.lambda);
 
