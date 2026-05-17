@@ -1,13 +1,21 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CreateRequestForm } from "@/components/CreateRequestForm";
 import { LeaderboardPanel } from "@/components/LeaderboardPanel";
 import { RequestListPanel } from "@/components/RequestListPanel";
 import { getProfileMe, putProfileMe } from "@/lib/api/client";
 import { getIdToken } from "@/lib/auth/session";
-import { geofenceLabel, resolveGeofenceKey } from "@/lib/geofence";
+import {
+  collectRequestGeofenceKeys,
+  coordinatesSignature,
+  geofenceKeysSignature,
+  geofenceLabel,
+  resolveBrowseCenter,
+  resolveLeaderboardGeofenceKey,
+} from "@/lib/geofence";
+import { filterRequestsNearby } from "@/lib/location/nearby";
 import type { ResolvedLocation } from "@/lib/location/resolve";
 import type { Coordinates, PublicHelpRequest, UserProfile } from "@/lib/types/domain";
 
@@ -33,7 +41,34 @@ export function MapPageView() {
   const [requests, setRequests] = useState<PublicHelpRequest[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [requestsError, setRequestsError] = useState<string | null>(null);
-  const geofence = resolveGeofenceKey(profile, location, pickedPin ?? mapCenter);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [extraGeofenceKeys, setExtraGeofenceKeys] = useState<string[]>([]);
+
+  const browseCenter = useMemo(
+    () => resolveBrowseCenter(profile, location, pickedPin, mapCenter),
+    [
+      profile?.lat,
+      profile?.lng,
+      location?.lat,
+      location?.lng,
+      pickedPin?.lat,
+      pickedPin?.lng,
+      mapCenter?.lat,
+      mapCenter?.lng,
+    ],
+  );
+  const geofenceKeys = useMemo(
+    () =>
+      collectRequestGeofenceKeys(
+        profile,
+        location,
+        pickedPin,
+        mapCenter,
+        extraGeofenceKeys,
+      ),
+    [profile, location, pickedPin, mapCenter, extraGeofenceKeys],
+  );
+  const leaderboardGeofence = resolveLeaderboardGeofenceKey(profile, location);
 
   const refreshRequests = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -72,10 +107,26 @@ export function MapPageView() {
     [],
   );
 
-  const handleCreated = useCallback(() => {
-    setPickMode(false);
-    refreshRequests();
-  }, [refreshRequests]);
+  const handleCreated = useCallback(
+    (created: PublicHelpRequest, postedAt: Coordinates) => {
+      setPickMode(false);
+      const withOwn: PublicHelpRequest = { ...created, isOwn: true };
+      if (created.geofence) {
+        setExtraGeofenceKeys((prev) =>
+          prev.includes(created.geofence!) ? prev : [...prev, created.geofence!],
+        );
+      }
+      setRequests((prev) => {
+        const merged = [withOwn, ...prev.filter((r) => r.id !== created.id)];
+        return filterRequestsNearby(
+          merged,
+          resolveBrowseCenter(profile, location, postedAt, mapCenter),
+        );
+      });
+      refreshRequests();
+    },
+    [profile, location, mapCenter, refreshRequests],
+  );
 
   const requestLocation = pickedPin ?? mapCenter;
 
@@ -90,8 +141,8 @@ export function MapPageView() {
             Your neighborhood
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Click the map to place a pin, then post your request. Neighbors only
-            see an approximate area.
+            Click the map to place your request pin (orange), then post. Teal pins
+            are nearby volunteer asks — only an approximate area is shown.
           </p>
           <div className="mt-4 min-h-0 flex-1">
             <NeighborhoodMap
@@ -100,7 +151,11 @@ export function MapPageView() {
               onLocationResolved={handleLocationResolved}
               onRequestsChange={setRequests}
               onRequestsError={setRequestsError}
-              geofence={geofence}
+              onRequestsLoadingChange={setRequestsLoading}
+              geofenceKeys={geofenceKeys}
+              geofenceKeysSignature={geofenceKeysSignature(geofenceKeys)}
+              nearbyCenterSignature={coordinatesSignature(browseCenter)}
+              nearbyCenter={browseCenter}
               refreshKey={refreshKey}
               pinPickEnabled={pickMode}
               pickedPin={pickedPin}
@@ -132,7 +187,9 @@ export function MapPageView() {
           </div>
           <div className="mt-4 min-h-0 flex-1 overflow-hidden">
             <RequestListPanel
-              geofence={geofence}
+              requests={requests}
+              loading={requestsLoading}
+              error={requestsError}
               refreshKey={refreshKey}
               onRefresh={refreshRequests}
             />
@@ -142,8 +199,8 @@ export function MapPageView() {
 
       <div className="h-[min(50vh,28rem)] min-h-64 shrink-0">
         <LeaderboardPanel
-          neighborhood={geofence}
-          neighborhoodLabel={geofenceLabel(profile, geofence)}
+          neighborhood={leaderboardGeofence}
+          neighborhoodLabel={geofenceLabel(profile, leaderboardGeofence)}
           refreshKey={refreshKey}
         />
       </div>
