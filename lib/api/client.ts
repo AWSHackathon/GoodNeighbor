@@ -95,6 +95,31 @@ export async function listRequests(
   return apiFetch<PublicHelpRequest[]>(`/requests${q}`, { authToken });
 }
 
+/** Query every relevant geofence bucket and merge (fixes pin vs fuzzed-center mismatch). */
+export async function listRequestsInArea(
+  authToken: string,
+  geofenceKeys: string[],
+): Promise<PublicHelpRequest[]> {
+  const keys = [...new Set(geofenceKeys.filter((k) => k && k !== "unknown"))];
+  if (keys.length === 0) return [];
+
+  const batches = await Promise.all(
+    keys.map((geofence) =>
+      listRequests(authToken, { geofence }).catch(() => [] as PublicHelpRequest[]),
+    ),
+  );
+
+  const byId = new Map<string, PublicHelpRequest>();
+  for (const batch of batches) {
+    for (const item of batch) {
+      byId.set(item.id, item);
+    }
+  }
+  return [...byId.values()].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+}
+
 export async function createRequest(
   authToken: string,
   body: CreateHelpRequestInput,
