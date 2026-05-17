@@ -12,7 +12,10 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { randomUUID } from "node:crypto";
 import { derivePublicPin } from "./obfuscate.js";
+import { geofenceKey, neighborhoodLabel } from "./geofence.js";
 import type { ProfileRecord, UserProfile } from "./handler-types.js";
+import { currentIsoWeekId } from "./iso-week.js";
+import { incrementUserStats } from "./profile-stats.js";
 import type { ApiGatewayEvent } from "./event.js";
 import { getSub, parseJsonBody } from "./event.js";
 import { json, type ApiJsonResponse } from "./response.js";
@@ -100,26 +103,6 @@ interface LeaderRecord {
   updatedAt: string;
 }
 
-function geofenceKey(profile: UserProfile, trueLat?: number, trueLng?: number): string {
-  if (profile.neighborhood) {
-    return profile.neighborhood
-      .toLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "");
-  }
-  if (profile.zipCode) return profile.zipCode;
-  const lat = trueLat ?? profile.lat;
-  const lng = trueLng ?? profile.lng;
-  if (lat != null && lng != null) {
-    return `loc-${Math.round(lat * 100)}-${Math.round(lng * 100)}`;
-  }
-  return "unknown";
-}
-
-function neighborhoodLabel(profile: UserProfile, geofence: string): string {
-  return profile.neighborhood ?? profile.zipCode ?? geofence;
-}
-
 function toPublicRequest(record: RequestMetadata): PublicHelpRequest {
   return {
     id: record.id,
@@ -138,17 +121,6 @@ function toPublicRequest(record: RequestMetadata): PublicHelpRequest {
 
 function gsiSk(status: HelpRequestStatus, createdAt: string, id: string): string {
   return `STATUS#${status}#${createdAt}#${id}`;
-}
-
-function currentIsoWeekId(date = new Date()): string {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(
-    ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
-  );
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
 async function listRequestsByGeofence(
@@ -309,6 +281,8 @@ export async function handleCreateRequest(
     }),
   );
 
+  await incrementUserStats(doc, tableName, sub, { requestsPosted: 1 });
+
   return json(201, toPublicRequest(record));
 }
 
@@ -372,6 +346,8 @@ export async function handleRespond(
       ConditionExpression: "attribute_not_exists(PK)",
     }),
   );
+
+  await incrementUserStats(doc, tableName, sub, { responsesSubmitted: 1 });
 
   return json(201, {
     id: response.id,
@@ -727,6 +703,10 @@ export async function handleFulfillRequest(
       helperName,
       hours,
     );
+    await incrementUserStats(doc, tableName, request.acceptedHelperSub, {
+      helpsCompleted: 1,
+      hoursContributed: hours,
+    });
   }
 
   return json(200, toPublicRequest({ ...request, status: "fulfilled", fulfilledAt: now }));
