@@ -37,6 +37,27 @@ export async function fetchAmazonStandardStyle(
 }
 
 const DRAFT_PIN_SOURCE = "good-neighbor-draft-pin";
+const USER_PIN_SOURCE = "good-neighbor-user-pin";
+
+type MapLibreMarker = {
+  setLngLat(lngLat: [number, number]): void;
+  remove(): void;
+};
+
+const userLocationMarkers = new WeakMap<MapLibreMap, MapLibreMarker>();
+
+function createUserPinElement(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.setAttribute("aria-hidden", "true");
+  el.style.width = "22px";
+  el.style.height = "22px";
+  el.style.borderRadius = "50%";
+  el.style.backgroundColor = "#2563eb";
+  el.style.border = "3px solid #ffffff";
+  el.style.boxShadow = "0 2px 8px rgba(0,0,0,0.35)";
+  el.style.pointerEvents = "none";
+  return el;
+}
 
 function whenStyleReady(map: MapLibreMap, fn: () => void): void {
   const run = () => {
@@ -106,6 +127,124 @@ function setDraftPinLayerNow(
       "circle-stroke-width": 3,
       "circle-stroke-color": "#ffffff",
     },
+  });
+}
+
+/** DOM marker for the signed-in user (always above map tiles). */
+export async function setUserLocationLayer(
+  map: MapLibreMap,
+  coordinates: [number, number] | null,
+): Promise<void> {
+  const maplibregl = (await import("maplibre-gl")).default;
+  const existing = userLocationMarkers.get(map);
+
+  if (!coordinates) {
+    existing?.remove();
+    userLocationMarkers.delete(map);
+    removeUserLocationCircleLayer(map);
+    return;
+  }
+
+  if (existing) {
+    existing.setLngLat(coordinates);
+    return;
+  }
+
+  const marker = new maplibregl.Marker({
+    element: createUserPinElement(),
+    anchor: "center",
+  })
+    .setLngLat(coordinates)
+    .addTo(map);
+
+  userLocationMarkers.set(map, marker);
+}
+
+export function clearUserLocationLayer(map: MapLibreMap): void {
+  userLocationMarkers.get(map)?.remove();
+  userLocationMarkers.delete(map);
+  removeUserLocationCircleLayer(map);
+}
+
+function removeUserLocationCircleLayer(map: MapLibreMap): void {
+  const layerId = `${USER_PIN_SOURCE}-circle`;
+  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  if (map.getSource(USER_PIN_SOURCE)) map.removeSource(USER_PIN_SOURCE);
+}
+
+/** Optional faint radius ring under the user marker. */
+function setUserLocationCircleLayerNow(
+  map: MapLibreMap,
+  coordinates: [number, number] | null,
+): void {
+  const layerId = `${USER_PIN_SOURCE}-circle`;
+
+  if (!coordinates) {
+    removeUserLocationCircleLayer(map);
+    return;
+  }
+
+  const data = {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates },
+        properties: {},
+      },
+    ],
+  };
+
+  if (map.getSource(USER_PIN_SOURCE)) {
+    (map.getSource(USER_PIN_SOURCE) as GeoJSONSource).setData(data);
+    if (map.getLayer(layerId)) {
+      map.moveLayer(layerId);
+    }
+    return;
+  }
+
+  map.addSource(USER_PIN_SOURCE, { type: "geojson", data });
+  map.addLayer({
+    id: layerId,
+    type: "circle",
+    source: USER_PIN_SOURCE,
+    paint: {
+      "circle-radius": 40,
+      "circle-color": "#3b82f6",
+      "circle-opacity": 0.15,
+      "circle-stroke-width": 0,
+    },
+  });
+}
+
+export function applyMapPinLayers(
+  map: MapLibreMap,
+  options: {
+    requestPins: MapPin[];
+    requestSourceId: string;
+    userCoordinates: [number, number] | null;
+    draftCoordinates: [number, number] | null;
+  },
+): void {
+  whenStyleReady(map, () => {
+    addPinLayersNow(map, options.requestSourceId, options.requestPins);
+    setUserLocationCircleLayerNow(map, options.userCoordinates);
+    setDraftPinLayerNow(map, options.draftCoordinates);
+
+    const userLayerId = `${USER_PIN_SOURCE}-circle`;
+    if (options.userCoordinates && map.getLayer(userLayerId)) {
+      map.moveLayer(userLayerId);
+    }
+    const draftLayerId = `${DRAFT_PIN_SOURCE}-circle`;
+    if (options.draftCoordinates && map.getLayer(draftLayerId)) {
+      map.moveLayer(draftLayerId);
+    }
+    const requestLayerId = `${options.requestSourceId}-circles`;
+    if (options.requestPins.length > 0 && map.getLayer(requestLayerId)) {
+      map.moveLayer(requestLayerId);
+    }
+
+    void setUserLocationLayer(map, options.userCoordinates);
   });
 }
 
