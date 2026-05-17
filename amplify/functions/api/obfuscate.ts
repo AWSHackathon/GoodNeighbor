@@ -1,7 +1,7 @@
 /** Server-side public pin (mirrors lib/location/obfuscate.ts). */
 
-const BUFFER_RADIUS_METERS_MIN = 400;
-const BUFFER_RADIUS_METERS_MAX = 800;
+const BUFFER_RADIUS_METERS_MIN = 40;
+const BUFFER_RADIUS_METERS_MAX = 80;
 const METERS_PER_DEGREE_LAT = 111_320;
 
 function hashRequestId(requestId: string): number {
