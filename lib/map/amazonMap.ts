@@ -147,6 +147,7 @@ export async function setUserLocationLayer(
 
   if (existing) {
     existing.setLngLat(coordinates);
+    whenStyleReady(map, () => setUserLocationCircleLayerNow(map, coordinates));
     return;
   }
 
@@ -158,6 +159,7 @@ export async function setUserLocationLayer(
     .addTo(map);
 
   userLocationMarkers.set(map, marker);
+  whenStyleReady(map, () => setUserLocationCircleLayerNow(map, coordinates));
 }
 
 export function clearUserLocationLayer(map: MapLibreMap): void {
@@ -228,7 +230,6 @@ export function applyMapPinLayers(
 ): void {
   whenStyleReady(map, () => {
     addPinLayersNow(map, options.requestSourceId, options.requestPins);
-    removeUserLocationCircleLayer(map);
     setDraftPinLayerNow(map, options.draftCoordinates);
     const draftLayerId = `${DRAFT_PIN_SOURCE}-circle`;
     if (options.draftCoordinates && map.getLayer(draftLayerId)) {
