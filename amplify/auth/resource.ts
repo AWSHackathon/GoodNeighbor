@@ -13,6 +13,8 @@ const externalProviders = {
   google: {
     clientId: secret("GOOGLE_CLIENT_ID"),
     clientSecret: secret("GOOGLE_CLIENT_SECRET"),
+    // Required so Cognito receives email (pool requires email attribute).
+    scopes: ["openid", "email", "profile"],
     attributeMapping: {
       email: "email",
       givenName: "given_name",
