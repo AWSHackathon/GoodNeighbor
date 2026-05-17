@@ -12,7 +12,10 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { randomUUID } from "node:crypto";
 import { derivePublicPin } from "./obfuscate.js";
-import { geofenceKey, neighborhoodLabel } from "./geofence.js";
+import {
+  geofenceKeyForRequestPin,
+  neighborhoodLabel,
+} from "./geofence.js";
 import type { ProfileRecord, UserProfile } from "./handler-types.js";
 import { currentIsoWeekId } from "./iso-week.js";
 import { incrementUserStats } from "./profile-stats.js";
@@ -33,6 +36,7 @@ export interface PublicHelpRequest {
   bufferRadiusMeters: number;
   meetingPlaceLabel?: string;
   neighborhood: string;
+  geofence?: string;
   status: HelpRequestStatus;
   createdAt: string;
 }
@@ -114,6 +118,7 @@ function toPublicRequest(record: RequestMetadata): PublicHelpRequest {
     bufferRadiusMeters: record.bufferRadiusMeters,
     meetingPlaceLabel: record.meetingPlaceLabel,
     neighborhood: record.neighborhood,
+    geofence: record.geofence,
     status: record.status,
     createdAt: record.createdAt,
   };
@@ -242,7 +247,7 @@ export async function handleCreateRequest(
   }
 
   const profile = profileRecord as unknown as UserProfile;
-  const geofence = geofenceKey(profile, body.trueLat, body.trueLng);
+  const geofence = geofenceKeyForRequestPin(body.trueLat, body.trueLng);
   const nhLabel = neighborhoodLabel(profile, geofence);
   const id = randomUUID();
   const now = new Date().toISOString();
