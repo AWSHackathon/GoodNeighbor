@@ -15,6 +15,8 @@ import {
 } from "@/lib/map/amazonMap";
 import { buildPinsFromRequests } from "@/lib/map/pins";
 import {
+  hasAmplifyGeo,
+  isPlaceholderAmplifyOutputs,
   resolveApiKeyMapConfig,
   resolveMapConfig,
   type MapConfig,
@@ -28,7 +30,11 @@ import {
   resolveUserLocation,
   type ResolvedLocation,
 } from "@/lib/location/resolve";
-import type { Coordinates, PublicHelpRequest } from "@/lib/types/domain";
+import type {
+  Coordinates,
+  PublicHelpRequest,
+  UserProfile,
+} from "@/lib/types/domain";
 
 type MapStatus =
   | "loading"
@@ -41,6 +47,7 @@ type MapStatus =
 const PIN_SOURCE_ID = "good-neighbor-requests";
 
 type NeighborhoodMapProps = {
+  profile?: UserProfile | null;
   geofence: string;
   refreshKey: number;
   requests: PublicHelpRequest[];
@@ -56,6 +63,7 @@ type NeighborhoodMapProps = {
 };
 
 export function NeighborhoodMap({
+  profile = null,
   geofence,
   refreshKey,
   requests,
@@ -69,6 +77,8 @@ export function NeighborhoodMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapReadyRef = useRef(false);
+  const geofenceRef = useRef(geofence);
+  const profileRef = useRef(profile);
   const onLocationResolvedRef = useRef(onLocationResolved);
   const onRequestsChangeRef = useRef(onRequestsChange);
   const onRequestsErrorRef = useRef(onRequestsError);
@@ -76,7 +86,10 @@ export function NeighborhoodMap({
   const pickedPinRef = useRef(pickedPin);
   const requestsRef = useRef(requests);
   const displayPinRef = useRef<UserDisplayPin | null>(null);
+  const pinnedConfigRef = useRef<MapConfig | null>(null);
+  const initInFlightRef = useRef(false);
 
+  const [mapReady, setMapReady] = useState(false);
   const [status, setStatus] = useState<MapStatus>("loading");
   const [error, setError] = useState<string | null>(null);
   const [location, setLocation] = useState<ResolvedLocation | null>(null);
@@ -84,6 +97,8 @@ export function NeighborhoodMap({
   const [zipInput, setZipInput] = useState("");
   const [mapConfig, setMapConfig] = useState<MapConfig>({ mode: "none" });
 
+  geofenceRef.current = geofence;
+  profileRef.current = profile;
   onLocationResolvedRef.current = onLocationResolved;
   onRequestsChangeRef.current = onRequestsChange;
   onRequestsErrorRef.current = onRequestsError;
@@ -163,10 +178,17 @@ export function NeighborhoodMap({
   }, []);
 
   useEffect(() => {
-    if (mapReadyRef.current && geofence) {
-      void fetchRequests(geofence);
-    }
-  }, [geofence, refreshKey, fetchRequests]);
+    if (!mapReady || !geofence) return;
+    void fetchRequests(geofence);
+  }, [geofence, refreshKey, mapReady, fetchRequests]);
+
+  const resolvePinnedMapConfig = useCallback(async (): Promise<MapConfig> => {
+    if (pinnedConfigRef.current) return pinnedConfigRef.current;
+    const config = await resolveMapConfig();
+    pinnedConfigRef.current = config;
+    setMapConfig(config);
+    return config;
+  }, []);
 
   const initMap = useCallback(
     async (
@@ -174,39 +196,69 @@ export function NeighborhoodMap({
       config: MapConfig,
       userPin?: UserDisplayPin | null,
     ) => {
-      if (!containerRef.current) return;
+      if (!containerRef.current || initInFlightRef.current) return;
+
+      initInFlightRef.current = true;
+      pinnedConfigRef.current = config;
+      setMapConfig(config);
 
       mapReadyRef.current = false;
+      setMapReady(false);
 
       if (mapRef.current) {
+        clearUserLocationLayer(mapRef.current);
         mapRef.current.remove();
         mapRef.current = null;
       }
 
-      if (config.mode === "api-key") {
-        await assertMapTileAccess(config.region, config.apiKey);
-        await assertMapStyleAccess(
-          config.region,
-          config.styleName,
-          config.apiKey,
-        );
+      try {
+        if (config.mode === "api-key") {
+          try {
+            await assertMapTileAccess(config.region, config.apiKey);
+            await assertMapStyleAccess(
+              config.region,
+              config.styleName,
+              config.apiKey,
+            );
 
-        const map = await createAmazonApiKeyMap(
-          containerRef.current,
-          center,
-          config,
-        );
-        mapRef.current = map;
-        await ensureMapLoaded(map, center);
+            const map = await createAmazonApiKeyMap(
+              containerRef.current,
+              center,
+              config,
+            );
+            mapRef.current = map;
+            await ensureMapLoaded(map, center, { strict: true });
 
-        mapReadyRef.current = true;
-        refreshMapLayers(userPin ?? displayPinRef.current);
-        setStatus("ready");
-        return;
-      }
+            mapReadyRef.current = true;
+            setMapReady(true);
+            refreshMapLayers(userPin ?? displayPinRef.current);
+            void fetchRequests(geofenceRef.current);
+            setStatus("ready");
+            return;
+          } catch (apiKeyErr) {
+            const mod = await import("@/amplify_outputs.json");
+            const outputs = mod.default ?? mod;
+            if (
+              hasAmplifyGeo(outputs) &&
+              !isPlaceholderAmplifyOutputs(outputs)
+            ) {
+              console.warn(
+                "Amazon Location API key map failed; using sandbox Cognito map",
+                apiKeyErr,
+              );
+              pinnedConfigRef.current = { mode: "amplify", hasGeo: true };
+              initInFlightRef.current = false;
+              return initMap(
+                center,
+                { mode: "amplify", hasGeo: true },
+                userPin,
+              );
+            }
+            throw apiKeyErr;
+          }
+        }
 
-      if (config.mode === "amplify") {
-        try {
+        if (config.mode === "amplify") {
           await import("@/lib/amplify/configure-client");
           const { fetchAuthSession } = await import("aws-amplify/auth");
           await fetchAuthSession();
@@ -219,25 +271,90 @@ export function NeighborhoodMap({
           });
           mapRef.current = map;
 
-          await ensureMapLoaded(map, center);
+          await ensureMapLoaded(map, center, { strict: false });
 
           mapReadyRef.current = true;
+          setMapReady(true);
           refreshMapLayers(userPin ?? displayPinRef.current);
+          void fetchRequests(geofenceRef.current);
           setStatus("ready");
           return;
-        } catch (amplifyErr) {
-          console.warn("Amplify Geo map failed, using API key", amplifyErr);
-          const mod = await import("@/amplify_outputs.json");
-          const outputs = mod.default ?? mod;
-          const fallback = resolveApiKeyMapConfig(outputs);
-          if (!fallback) throw amplifyErr;
-          return initMap(center, fallback, userPin);
         }
+
+        setStatus("needs-config");
+      } finally {
+        initInFlightRef.current = false;
+      }
+    },
+    [refreshMapLayers, fetchRequests],
+  );
+
+  const resolvedFromProfile = useCallback(
+    (p: UserProfile): ResolvedLocation => ({
+      lat: p.lat!,
+      lng: p.lng!,
+      source: p.zipCode ? "zip" : "gps",
+      zipCode: p.zipCode,
+      neighborhood: p.neighborhood,
+    }),
+    [],
+  );
+
+  const syncProfileToMap = useCallback(
+    async (p: UserProfile) => {
+      if (p.lat == null || p.lng == null) return;
+
+      const resolved = resolvedFromProfile(p);
+      setLocation(resolved);
+
+      let pin: UserDisplayPin;
+      try {
+        const token = await getIdToken();
+        const userSub = getUserSubFromIdToken(token);
+        pin = await resolveUserDisplayPin(resolved.lat, resolved.lng, userSub);
+      } catch {
+        pin = {
+          lat: resolved.lat,
+          lng: resolved.lng,
+          bufferRadiusMeters: 0,
+        };
       }
 
-      setStatus("needs-config");
+      displayPinRef.current = pin;
+      setDisplayPin(pin);
+
+      const map = mapRef.current;
+      if (map && mapReadyRef.current) {
+        const prev = displayPinRef.current;
+        const samePin =
+          prev &&
+          Math.abs(prev.lat - pin.lat) < 1e-6 &&
+          Math.abs(prev.lng - pin.lng) < 1e-6;
+
+        refreshMapLayers(pin);
+        if (!samePin && map.loaded()) {
+          map.easeTo({
+            center: [pin.lng, pin.lat],
+            duration: 0,
+          });
+        }
+        void fetchRequests(geofenceRef.current);
+        return;
+      }
+
+      onLocationResolvedRef.current?.(resolved, {
+        lat: pin.lat,
+        lng: pin.lng,
+      });
+
+      const config = await resolvePinnedMapConfig();
+      if (config.mode === "none") {
+        setStatus("needs-config");
+        return;
+      }
+      await initMap({ lat: pin.lat, lng: pin.lng }, config, pin);
     },
-    [refreshMapLayers],
+    [initMap, resolvePinnedMapConfig, refreshMapLayers, resolvedFromProfile, fetchRequests],
   );
 
   const startWithLocation = useCallback(
@@ -265,8 +382,7 @@ export function NeighborhoodMap({
         lng: pin.lng,
       });
 
-      const config = await resolveMapConfig();
-      setMapConfig(config);
+      const config = await resolvePinnedMapConfig();
       if (config.mode === "none") {
         setStatus("needs-config");
         return;
@@ -274,15 +390,20 @@ export function NeighborhoodMap({
 
       await initMap({ lat: pin.lat, lng: pin.lng }, config, pin);
     },
-    [initMap],
+    [initMap, resolvePinnedMapConfig],
   );
 
   const bootstrap = useCallback(async () => {
     setStatus("locating");
     setError(null);
 
-    const config = await resolveMapConfig();
-    setMapConfig(config);
+    const saved = profileRef.current;
+    if (saved?.lat != null && saved?.lng != null) {
+      await syncProfileToMap(saved);
+      return;
+    }
+
+    const config = await resolvePinnedMapConfig();
     if (config.mode === "none") {
       setStatus("needs-config");
       return;
@@ -296,12 +417,15 @@ export function NeighborhoodMap({
       setError(message);
       setStatus(message.includes("map tiles") ? "error" : "needs-location");
     }
-  }, [startWithLocation]);
+  }, [startWithLocation, syncProfileToMap, resolvePinnedMapConfig]);
 
   useEffect(() => {
     void bootstrap();
     return () => {
       mapReadyRef.current = false;
+      setMapReady(false);
+      initInFlightRef.current = false;
+      pinnedConfigRef.current = null;
       if (mapRef.current) {
         clearUserLocationLayer(mapRef.current);
         mapRef.current.remove();
@@ -310,6 +434,15 @@ export function NeighborhoodMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
+
+  useEffect(() => {
+    if (!mapReady || profile?.lat == null || profile?.lng == null) return;
+    void syncProfileToMap(profile);
+  }, [
+    mapReady,
+    profile,
+    syncProfileToMap,
+  ]);
 
   const handleZipSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
