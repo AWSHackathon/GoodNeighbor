@@ -1,9 +1,35 @@
-# Amplify Gen 2 backend (Phase 1+)
+# Amplify Gen 2 backend
 
-This folder will contain:
+## Resources
 
-- `auth/resource.ts` — Cognito (email + Google)
-- `functions/api/` — Lambda REST handlers
-- `backend.ts` — DynamoDB, Amazon Location (map + geofence), API Gateway
+| Resource | Purpose |
+|----------|---------|
+| `auth/resource.ts` | Cognito User Pool + Identity Pool (guest + signed-in) |
+| `backend.ts` | **GoodNeighborMap** on Amazon Location Service (`VectorEsriNavigation`) |
 
-Initialize with Amplify Gen 2 when starting Phase 1. See docs/PLAN.md.
+Guest and authenticated IAM roles can call `geo:GetMap*` on the map.
+
+## Deploy (personal sandbox)
+
+From the repo root (AWS credentials required):
+
+```bash
+npm run sandbox
+```
+
+This writes `amplify_outputs.json` for the Next.js app. The map on `/map` uses Amplify Geo + `maplibre-gl-js-amplify`.
+
+## API key alternative (no sandbox)
+
+1. In [Amazon Location Service](https://console.aws.amazon.com/location/home), create a **map** (e.g. style **Standard** for API keys).
+2. Create an **API key** scoped to that map.
+3. Add to `.env.local`:
+
+```bash
+NEXT_PUBLIC_AMAZON_LOCATION_API_KEY=your-key
+NEXT_PUBLIC_AWS_REGION=us-west-2
+NEXT_PUBLIC_LOCATION_MAP_STYLE=Standard
+AMAZON_LOCATION_API_KEY=your-key
+```
+
+Restart `npm run dev` and open `/map`.
