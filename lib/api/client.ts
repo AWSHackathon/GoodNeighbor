@@ -11,6 +11,7 @@ import type {
   PublicHelpRequest,
   ThreadMessage,
   UserProfile,
+  UserProfileWithMetrics,
 } from "@/lib/types/domain";
 import type { LeaderboardResponse } from "@/lib/types/leaderboard";
 
@@ -65,15 +66,17 @@ async function apiFetch<T>(
 
 // --- Profiles ---
 
-export async function getProfileMe(authToken: string): Promise<UserProfile> {
-  return apiFetch<UserProfile>("/profiles/me", { authToken });
+export async function getProfileMe(
+  authToken: string,
+): Promise<UserProfileWithMetrics> {
+  return apiFetch<UserProfileWithMetrics>("/profiles/me", { authToken });
 }
 
 export async function putProfileMe(
   authToken: string,
   body: Partial<UserProfile>,
-): Promise<UserProfile> {
-  return apiFetch<UserProfile>("/profiles/me", {
+): Promise<UserProfileWithMetrics> {
+  return apiFetch<UserProfileWithMetrics>("/profiles/me", {
     method: "PUT",
     authToken,
     body: JSON.stringify(body),
