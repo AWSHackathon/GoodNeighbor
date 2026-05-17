@@ -31,7 +31,14 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  if (!authenticated) {
+  const isLoginPage = request.nextUrl.pathname === "/login";
+
+  if (isLoginPage && authenticated) {
+    const next = request.nextUrl.searchParams.get("next") ?? "/map";
+    return NextResponse.redirect(new URL(next, request.url));
+  }
+
+  if (!authenticated && !isLoginPage) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(login);
@@ -41,5 +48,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/map/:path*", "/requests/:path*"],
+  matcher: ["/map/:path*", "/requests/:path*", "/login"],
 };
