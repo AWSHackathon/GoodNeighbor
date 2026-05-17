@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
-  getPublicMapConfig,
   getStyleDescriptorUrl,
-  hasAmplifyGeo,
+  resolveMapConfig,
   type MapConfig,
 } from "@/lib/map/config";
 import { assertMapTileAccess } from "@/lib/map/validateApiKey";
@@ -26,28 +25,7 @@ export function NeighborhoodMap() {
   const [error, setError] = useState<string | null>(null);
   const [location, setLocation] = useState<ResolvedLocation | null>(null);
   const [zipInput, setZipInput] = useState("");
-  const [mapConfig, setMapConfig] = useState<MapConfig>(() => getPublicMapConfig());
-
-  const resolveAmplifyConfig = useCallback(async (): Promise<MapConfig> => {
-    const publicConfig = getPublicMapConfig();
-    if (publicConfig.mode === "api-key") return publicConfig;
-
-    try {
-      const mod = await import("@/amplify_outputs.json");
-      const outputs = mod.default ?? mod;
-      if (hasAmplifyGeo(outputs)) {
-        const { Amplify } = await import("aws-amplify");
-        Amplify.configure(outputs as Parameters<typeof Amplify.configure>[0], {
-          ssr: true,
-        });
-        return { mode: "amplify", hasGeo: true };
-      }
-    } catch {
-      // not deployed yet
-    }
-
-    return { mode: "none" };
-  }, []);
+  const [mapConfig, setMapConfig] = useState<MapConfig>({ mode: "none" });
 
   const initMap = useCallback(
     async (center: Coordinates, config: MapConfig) => {
@@ -80,9 +58,17 @@ export function NeighborhoodMap() {
             event.error && "status" in event.error
               ? (event.error as { status?: number }).status
               : undefined;
-          if (status === 403) {
+          const message =
+            event.error instanceof Error
+              ? event.error.message
+              : typeof event.error === "string"
+                ? event.error
+                : "";
+          if (status === 403 || /load failed/i.test(message)) {
             setError(
-              "Map tiles were denied (403). Update your API key to allow geo-maps:* on the default map resource, or use npm run sandbox.",
+              status === 403
+                ? "Map tiles were denied (403). Update your API key to allow geo-maps:* on the default map resource, or run npm run sandbox."
+                : "Map tiles could not load. Run npm run sandbox and sign in, or fix NEXT_PUBLIC_AMAZON_LOCATION_API_KEY / map style in .env.local.",
             );
             setStatus("error");
           }
@@ -94,6 +80,7 @@ export function NeighborhoodMap() {
       }
 
       if (config.mode === "amplify") {
+        await import("@/lib/amplify/configure-client");
         const { createMap, drawPoints } = await import("maplibre-gl-js-amplify");
 
         const map = await createMap({
@@ -102,6 +89,20 @@ export function NeighborhoodMap() {
           zoom: 13,
         });
         mapRef.current = map;
+        map.on("error", (event) => {
+          const message =
+            event.error instanceof Error
+              ? event.error.message
+              : typeof event.error === "string"
+                ? event.error
+                : "";
+          if (/load failed|403|401/i.test(message)) {
+            setError(
+              "Map could not load tiles. Sign in and ensure npm run sandbox deployed GoodNeighborMap, or set a valid Amazon Location API key.",
+            );
+            setStatus("error");
+          }
+        });
         map.on("load", () => {
           drawPoints("good-neighbor-requests", buildSamplePins(center), map, {
             showCluster: true,
@@ -131,7 +132,7 @@ export function NeighborhoodMap() {
     setStatus("loading");
     setError(null);
 
-    const config = await resolveAmplifyConfig();
+    const config = await resolveMapConfig();
     setMapConfig(config);
 
     if (config.mode === "none") {
@@ -148,7 +149,7 @@ export function NeighborhoodMap() {
       setError(message);
       setStatus(message.includes("map tiles") ? "error" : "needs-location");
     }
-  }, [initMap, resolveAmplifyConfig]);
+  }, [initMap]);
 
   useEffect(() => {
     void bootstrap();
@@ -166,7 +167,7 @@ export function NeighborhoodMap() {
     setError(null);
     try {
       const resolved = await resolveLocationFromZip(zipInput);
-      const config = await resolveAmplifyConfig();
+      const config = await resolveMapConfig();
       setMapConfig(config);
       setLocation(resolved);
       await initMap(resolved, config);
@@ -210,7 +211,22 @@ export function NeighborhoodMap() {
         </div>
       )}
 
-      {(status === "needs-location" || error) && mapConfig.mode !== "none" && (
+      {status === "error" && error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-xl bg-slate-50/95 p-6 text-center">
+          <p className="text-sm font-semibold text-slate-900">Map unavailable</p>
+          <p className="max-w-sm text-xs text-slate-600">{error}</p>
+          <button
+            type="button"
+            onClick={() => void bootstrap()}
+            className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {(status === "needs-location" || (error && status !== "error")) &&
+        mapConfig.mode !== "none" && (
         <div className="absolute bottom-3 left-3 right-3 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-md backdrop-blur">
           <p className="text-xs text-slate-600">
             {error ?? "Allow location access or enter your ZIP to center the map."}
