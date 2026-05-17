@@ -1,0 +1,25 @@
+{
+  "version": "1.4",
+  "auth": {
+    "user_pool_id": "REPLACE_AFTER_SANDBOX",
+    "aws_region": "us-west-2",
+    "user_pool_client_id": "REPLACE_AFTER_SANDBOX",
+    "identity_pool_id": "REPLACE_AFTER_SANDBOX",
+    "mfa_methods": [],
+    "standard_required_attributes": ["email"],
+    "username_attributes": ["email"],
+    "user_verification_types": ["email"],
+    "unauthenticated_identities_enabled": true
+  },
+  "geo": {
+    "aws_region": "us-west-2",
+    "maps": {
+      "items": {
+        "GoodNeighborMap": {
+          "style": "VectorEsriNavigation"
+        }
+      },
+      "default": "GoodNeighborMap"
+    }
+  }
+}
