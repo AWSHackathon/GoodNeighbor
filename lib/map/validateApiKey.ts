@@ -1,3 +1,18 @@
+/** Returns true when the API key can load Standard style + a sample tile. */
+export async function probeApiKeyMapAccess(
+  region: string,
+  styleName: string,
+  apiKey: string,
+): Promise<boolean> {
+  try {
+    await assertMapStyleAccess(region, styleName, apiKey);
+    await assertMapTileAccess(region, apiKey);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Confirms the style descriptor URL works for this API key (v2 only supports certain names, e.g. Standard). */
 export async function assertMapStyleAccess(
   region: string,
