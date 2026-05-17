@@ -293,7 +293,7 @@ function addPinLayersNow(
     type: "circle",
     source: sourceId,
     paint: {
-      // Approximate ~400–800 m privacy buffer at neighborhood zoom
+      // Approximate ~40–80 m privacy buffer at neighborhood zoom
       "circle-radius": 46,
       "circle-color": "#0d9488",
       "circle-opacity": 0.2,
