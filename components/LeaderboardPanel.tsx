@@ -9,6 +9,7 @@ import type {
   LeaderboardPeriod,
   LeaderboardResponse,
 } from "@/lib/types/leaderboard";
+import { canonicalLeaderboardGeofence } from "@/lib/geofence";
 import { LEADERBOARD_PAGE_SIZE } from "@/lib/types/leaderboard";
 
 type LeaderboardPanelProps = {
@@ -16,6 +17,13 @@ type LeaderboardPanelProps = {
   neighborhoodLabel: string;
   refreshKey: number;
 };
+
+function resolveQueryGeofence(neighborhood: string): string {
+  if (!neighborhood || neighborhood === "unknown") {
+    return "capitol-hill";
+  }
+  return canonicalLeaderboardGeofence(neighborhood);
+}
 
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: "all", label: "All time" },
@@ -37,14 +45,11 @@ export function LeaderboardPanel({
   }, [neighborhood, period, refreshKey]);
 
   const load = useCallback(async () => {
-    const nh =
-      !neighborhood || neighborhood === "unknown"
-        ? "capitol-hill"
-        : neighborhood;
+    const queryGeofence = resolveQueryGeofence(neighborhood);
 
     if (!neighborhood || neighborhood === "unknown") {
       setData(
-        getMockLeaderboard(nh, period, page, LEADERBOARD_PAGE_SIZE),
+        getMockLeaderboard(queryGeofence, period, page, LEADERBOARD_PAGE_SIZE),
       );
       setUsingMock(true);
       return;
@@ -53,26 +58,45 @@ export function LeaderboardPanel({
     try {
       const token = await getIdToken();
       const apiData = await getLeaderboard(token, {
-        neighborhood,
+        neighborhood: queryGeofence,
         period,
         page,
         limit: LEADERBOARD_PAGE_SIZE,
       });
-      setData(
-        normalizeLeaderboardResponse(
-          {
-            ...apiData,
-            neighborhoodLabel:
-              neighborhoodLabel || apiData.neighborhoodLabel,
-          },
-          page,
-          LEADERBOARD_PAGE_SIZE,
-        ),
+      const normalized = normalizeLeaderboardResponse(
+        {
+          ...apiData,
+          neighborhoodLabel:
+            neighborhoodLabel || apiData.neighborhoodLabel,
+        },
+        page,
+        LEADERBOARD_PAGE_SIZE,
       );
+      if (
+        normalized.pagination.totalCount === 0 &&
+        queryGeofence === "capitol-hill"
+      ) {
+        setData(
+          getMockLeaderboard(
+            "capitol-hill",
+            period,
+            page,
+            LEADERBOARD_PAGE_SIZE,
+          ),
+        );
+        setUsingMock(true);
+        return;
+      }
+      setData(normalized);
       setUsingMock(false);
     } catch {
       setData(
-        getMockLeaderboard(neighborhood, period, page, LEADERBOARD_PAGE_SIZE),
+        getMockLeaderboard(
+          queryGeofence,
+          period,
+          page,
+          LEADERBOARD_PAGE_SIZE,
+        ),
       );
       setUsingMock(true);
     }
@@ -82,12 +106,11 @@ export function LeaderboardPanel({
     void load();
   }, [load]);
 
+  const queryGeofence = resolveQueryGeofence(neighborhood);
   const display = normalizeLeaderboardResponse(
     data ??
       getMockLeaderboard(
-        neighborhood && neighborhood !== "unknown"
-          ? neighborhood
-          : "capitol-hill",
+        queryGeofence,
         period,
         page,
         LEADERBOARD_PAGE_SIZE,
