@@ -5,6 +5,8 @@ export type MapPin = {
   coordinates: [number, number];
   title: string;
   address?: string;
+  /** Obfuscation buffer for request pins (AWS-US-3). */
+  bufferRadiusMeters?: number;
 };
 
 /** Demo obfuscated pins near the map center (Phase 4 will use GET /requests). */
