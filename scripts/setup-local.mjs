@@ -1,11 +1,26 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { spawnSync } from "node:child_process";
+
 const root = join(import.meta.dirname, "..");
+const amplifyDir = join(root, "amplify");
 const envExample = join(root, ".env.example");
 const envLocal = join(root, ".env.local");
 const outputsExample = join(root, "amplify_outputs.example.json");
 const outputsLocal = join(root, "amplify_outputs.json");
+
+if (existsSync(join(amplifyDir, "package.json"))) {
+  console.log("Installing Amplify backend dependencies (amplify/)…");
+  const install = spawnSync("npm", ["install", "--prefix", amplifyDir], {
+    cwd: root,
+    stdio: "inherit",
+    shell: true,
+  });
+  if (install.status !== 0) {
+    console.warn("amplify/ npm install failed — run: npm install --prefix amplify");
+  }
+}
 
 if (!existsSync(envLocal) && existsSync(envExample)) {
   copyFileSync(envExample, envLocal);
