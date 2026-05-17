@@ -141,8 +141,7 @@ export function MapPageView() {
             Your neighborhood
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Click the map to place your request pin (orange), then post. Teal pins
-            are nearby volunteer asks — only an approximate area is shown.
+            Click the map to place your request pin, then post — only an approximate area is shown.
           </p>
           <div className="mt-4 min-h-0 flex-1">
             <NeighborhoodMap
