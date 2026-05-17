@@ -79,6 +79,20 @@ const authRoutes = [
   { path: "/leaderboard", methods: [HttpMethod.GET] },
 ];
 
+const corsOptionPaths = [
+  ...authRoutes.map((r) => r.path),
+  "/{proxy+}",
+];
+
+// JWT authorizers apply to OPTIONS unless we register explicit unauthenticated routes.
+for (const path of corsOptionPaths) {
+  httpApi.addRoutes({
+    path,
+    methods: [HttpMethod.OPTIONS],
+    integration: httpLambdaIntegration,
+  });
+}
+
 for (const route of authRoutes) {
   httpApi.addRoutes({
     path: route.path,
@@ -88,9 +102,17 @@ for (const route of authRoutes) {
   });
 }
 
+// Do not use HttpMethod.ANY — it includes OPTIONS and forces Cognito auth on
+// CORS preflight, which browsers block as "Failed to fetch".
 httpApi.addRoutes({
   path: "/{proxy+}",
-  methods: [HttpMethod.ANY],
+  methods: [
+    HttpMethod.GET,
+    HttpMethod.POST,
+    HttpMethod.PUT,
+    HttpMethod.PATCH,
+    HttpMethod.DELETE,
+  ],
   integration: httpLambdaIntegration,
   authorizer: userPoolAuthorizer,
 });
