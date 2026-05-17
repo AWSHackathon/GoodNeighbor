@@ -23,9 +23,9 @@ The map centers on the user’s area—no fixed demo neighborhood. Resolution or
 
 ## Project status
 
-**Phase 0 (current):** Repo structure, README, UI stubs, and `lib/` / `amplify/functions/` stubs for location privacy and coordination. No AWS resources deployed yet.
+**Phase 1 (current):** Amplify Gen 2 backend — Cognito (Google + email), DynamoDB profiles, HTTP API (`GET/PUT /profiles/me`), login UI, route protection. Run `npm run sandbox` to deploy.
 
-**Next (Phase 1):** Amplify Gen 2 backend, Cognito + Google login, DynamoDB profiles, user-resolved map location, Lambda API.
+**Next (Phase 3+):** Help requests CRUD, responses, thread, real leaderboard API.
 
 See [docs/PLAN.md](docs/PLAN.md) for the full architecture and implementation phases.
 
@@ -43,7 +43,7 @@ npm run setup   # install deps + create .env.local from .env.example
 npm run dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Use **Preview map** on `/login` to reach `/map` without Cognito (Phase 0).
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). After sandbox deploy, sign in at `/login`. Without Cognito deployed, **Preview map** on `/login` still works.
 
 Mock API (leaderboard): `GET http://127.0.0.1:3000/api/leaderboard?neighborhood=capitol-hill&period=all`
 
@@ -104,10 +104,11 @@ Avoid force-pushing `main` unless explicitly agreed by the team.
 
 ## Team next steps
 
-1. Read [docs/PLAN.md](docs/PLAN.md).
-2. Phase 1: wire `amplify/` per plan.
-3. `npx ampx sandbox` — deploy personal backend, generate `amplify_outputs.json`.
-4. Connect repo to **Amplify Hosting** in the AWS Console.
+1. Read [docs/PLAN.md](docs/PLAN.md) and [amplify/README.md](amplify/README.md).
+2. Set Google OAuth secrets and run `npm run sandbox`.
+3. Sign in at `/login` and verify profile via API.
+4. Phase 3: implement `POST/GET /requests` in `amplify/functions/api/handler.ts`.
+5. Connect repo to **Amplify Hosting** in the AWS Console.
 
 ## License
 
