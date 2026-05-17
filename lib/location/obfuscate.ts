@@ -5,9 +5,9 @@
 
 import type { Coordinates } from "@/lib/types/domain";
 
-/** ~0.25–0.5 mi — see docs/PLAN.md#location-privacy */
-export const BUFFER_RADIUS_METERS_MIN = 400;
-export const BUFFER_RADIUS_METERS_MAX = 800;
+/** ~40–80 m public pin offset — see docs/PLAN.md#location-privacy */
+export const BUFFER_RADIUS_METERS_MIN = 40;
+export const BUFFER_RADIUS_METERS_MAX = 80;
 
 /** Smaller buffer when primary offset candidates fall on water */
 export const USER_DISPLAY_FALLBACK_MIN = 100;
