@@ -1,6 +1,16 @@
 import type { ResolvedLocation } from "@/lib/location/resolve";
 import type { Coordinates, UserProfile } from "@/lib/types/domain";
 
+/** Capitol Hill demo cluster (AWS-US-4 seed) — always queried so mock posts are listable. */
+export const DEMO_SEED_CENTER = { lat: 47.6253, lng: -122.3222 } as const;
+
+/** GSI keys used by npm run seed:mock; must match seed script index + profile ZIP/neighborhood. */
+export const DEMO_SEED_GEOFENCE_KEYS = [
+  "98102",
+  "capitol-hill",
+  geofenceLocBucket(DEMO_SEED_CENTER.lat, DEMO_SEED_CENTER.lng),
+] as const;
+
 /** ~1.1 km grid cell for pin-based request index (AWS-US-3). */
 export function geofenceLocBucket(lat: number, lng: number): string {
   return `loc-${Math.round(lat * 100)}-${Math.round(lng * 100)}`;
@@ -45,7 +55,10 @@ export function collectRequestGeofenceKeys(
   mapCenter?: Coordinates | null,
   extraKeys: string[] = [],
 ): string[] {
-  const keys = new Set<string>(extraKeys.filter(Boolean));
+  const keys = new Set<string>([
+    ...DEMO_SEED_GEOFENCE_KEYS,
+    ...extraKeys.filter(Boolean),
+  ]);
 
   const addPoint = (p?: Coordinates | null) => {
     if (p?.lat != null && p.lng != null) {
