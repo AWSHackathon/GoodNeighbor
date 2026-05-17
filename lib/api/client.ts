@@ -1,8 +1,8 @@
 /**
- * HTTP API client stubs (docs/PLAN.md#Lambda API).
- * Wire to Amplify/API Gateway in Phase 1.
+ * HTTP API client (docs/PLAN.md — Lambda API).
  */
 
+import { resolveApiBaseUrl } from "@/lib/api/config";
 import type {
   CreateHelpRequestInput,
   HelpRequestResponse,
@@ -12,13 +12,24 @@ import type {
   UserProfile,
 } from "@/lib/types/domain";
 
-const NOT_CONFIGURED =
-  "API base URL not configured. Set NEXT_PUBLIC_API_URL after Phase 1 deploy.";
+let cachedApiBaseUrl: string | null = null;
 
-function getApiBaseUrl(): string {
-  const base = process.env.NEXT_PUBLIC_API_URL;
-  if (!base) throw new Error(NOT_CONFIGURED);
-  return base.replace(/\/$/, "");
+async function getApiBaseUrl(): Promise<string> {
+  if (cachedApiBaseUrl) return cachedApiBaseUrl;
+  if (process.env.NEXT_PUBLIC_API_URL?.trim()) {
+    cachedApiBaseUrl = process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/$/, "");
+    return cachedApiBaseUrl;
+  }
+  try {
+    const mod = await import("@/amplify_outputs.json");
+    const outputs = mod.default ?? mod;
+    cachedApiBaseUrl = resolveApiBaseUrl(outputs);
+    return cachedApiBaseUrl;
+  } catch {
+    throw new Error(
+      "API base URL not configured. Run npm run sandbox or set NEXT_PUBLIC_API_URL.",
+    );
+  }
 }
 
 async function apiFetch<T>(
@@ -34,7 +45,8 @@ async function apiFetch<T>(
     (headers as Record<string, string>)["Authorization"] = `Bearer ${authToken}`;
   }
 
-  const res = await fetch(`${getApiBaseUrl()}${path}`, {
+  const base = await getApiBaseUrl();
+  const res = await fetch(`${base}${path}`, {
     ...fetchInit,
     headers,
   });
