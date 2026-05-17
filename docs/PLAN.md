@@ -155,7 +155,7 @@ Public surfaces never expose exact home coordinates. Behavior is modeled on **Fa
 | Layer | Stored / used internally | Shown publicly |
 |-------|--------------------------|----------------|
 | User map center | GPS / IP / ZIP (full resolution for queries) | Neighborhood or ZIP label only; map centers on bucket, not exact home |
-| Request pin | True lat/lng (server-side, encrypted at rest) | **Obfuscated point**: random offset within a fixed-radius buffer (~0.25–0.5 mi / ~400–800 m) around the true location; same request always maps to the same public point (deterministic jitter from `requestId`) |
+| Request pin | True lat/lng (server-side, encrypted at rest) | **Obfuscated point**: random offset within a fixed-radius buffer (~40–80 m) around the true location; same request always maps to the same public point (deterministic jitter from `requestId`) |
 | Meeting place | Optional free-text or Places search at create time | Public label only (e.g. "near Safeway on Broadway") — no street number unless user chooses a public landmark |
 | Exact address / door code | — | **Never** on map, list, or API fields returned to non-participants |
 
