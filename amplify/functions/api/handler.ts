@@ -208,6 +208,15 @@ async function handlePutProfileMe(event: ApiGatewayEvent) {
   if (body.lng !== undefined) {
     record.lng = typeof body.lng === "number" ? body.lng : undefined;
   }
+  if (body.locationSource !== undefined) {
+    const src = body.locationSource;
+    record.locationSource =
+      src === "gps" || src === "zip" || src === "ip" ? src : undefined;
+    if (record.locationSource === "zip" || record.locationSource === "ip") {
+      record.lat = undefined;
+      record.lng = undefined;
+    }
+  }
 
   record.email = email;
   record.updatedAt = now;
