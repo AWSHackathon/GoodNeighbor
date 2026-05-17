@@ -13,10 +13,14 @@ export async function getLeaderboard(
   authToken: string,
   neighborhood: string,
   period: LeaderboardPeriod = "all",
+  page = 1,
+  limit = 10,
 ): Promise<LeaderboardResponse> {
   const params = new URLSearchParams({
     neighborhood,
     period,
+    page: String(page),
+    limit: String(limit),
   });
   const res = await fetch(
     `${resolveLocalMockApiBaseUrl()}/leaderboard?${params}`,
