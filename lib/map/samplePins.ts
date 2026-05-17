@@ -15,7 +15,7 @@ export function buildSamplePins(center: Coordinates): MapPin[] {
     {
       id: "sample-groceries",
       title: "Need groceries pickup",
-      address: "Approximate area pin (~400m buffer)",
+      address: "Approximate area pin (~40–80m buffer)",
       offset: { lat: 0.004, lng: 0.006 },
     },
     {
