@@ -27,6 +27,7 @@ import {
   assertMapStyleAccess,
   assertMapTileAccess,
 } from "@/lib/map/validateApiKey";
+import { resolveLocationFromProfile } from "@/lib/location/profile";
 import {
   resolveLocationFromZip,
   resolveUserLocation,
@@ -50,6 +51,8 @@ const PIN_SOURCE_ID = "good-neighbor-requests";
 
 type NeighborhoodMapProps = {
   profile?: UserProfile | null;
+  /** When true, profile fetch finished — avoids GPS→saved-profile pin jump on reload. */
+  profileReady?: boolean;
   geofenceKeys: string[];
   nearbyCenter?: Coordinates | null;
   refreshKey: number;
@@ -70,6 +73,7 @@ type NeighborhoodMapProps = {
 
 export function NeighborhoodMap({
   profile = null,
+  profileReady = false,
   geofenceKeys,
   nearbyCenter = null,
   refreshKey,
@@ -98,6 +102,8 @@ export function NeighborhoodMap({
   const pickedPinRef = useRef(pickedPin);
   const requestsRef = useRef(requests);
   const displayPinRef = useRef<UserDisplayPin | null>(null);
+  const locationAuthorityRef = useRef<ResolvedLocation | null>(null);
+  const didBootstrapRef = useRef(false);
   const pinnedConfigRef = useRef<MapConfig | null>(null);
   const initInFlightRef = useRef(false);
 
@@ -122,7 +128,7 @@ export function NeighborhoodMap({
   displayPinRef.current = displayPin;
 
   const refreshMapLayers = useCallback(
-    (userPinOverride?: UserDisplayPin | null) => {
+    (userPinOverride?: UserDisplayPin | null, options?: { recenterUser?: boolean }) => {
       const map = mapRef.current;
       if (!map || !mapReadyRef.current) return;
 
@@ -139,6 +145,11 @@ export function NeighborhoodMap({
       if (draft && map.loaded()) {
         map.easeTo({
           center: [draft.lng, draft.lat],
+          duration: 400,
+        });
+      } else if (options?.recenterUser && userPin && map.loaded()) {
+        map.easeTo({
+          center: [userPin.lng, userPin.lat],
           duration: 400,
         });
       }
@@ -196,6 +207,31 @@ export function NeighborhoodMap({
       onRequestsLoadingChangeRef.current?.(false);
     }
   }, []);
+
+  /** Move the blue pin without tearing down the map (avoids marker/center drift on refresh). */
+  const syncUserLocationOnMap = useCallback(
+    (resolved: ResolvedLocation, pin: UserDisplayPin, notifyParent: boolean) => {
+      locationAuthorityRef.current = resolved;
+      setLocation(resolved);
+      displayPinRef.current = pin;
+      setDisplayPin(pin);
+      setStatus("ready");
+
+      const map = mapRef.current;
+      if (map && mapReadyRef.current) {
+        refreshMapLayers(pin, { recenterUser: true });
+        void fetchRequests(geofenceKeysRef.current);
+      }
+
+      if (notifyParent) {
+        onLocationResolvedRef.current?.(resolved, {
+          lat: resolved.lat,
+          lng: resolved.lng,
+        });
+      }
+    },
+    [refreshMapLayers, fetchRequests],
+  );
 
   useEffect(() => {
     if (!mapReady || !geofenceKeysSignature) return;
@@ -309,105 +345,61 @@ export function NeighborhoodMap({
     [refreshMapLayers, fetchRequests],
   );
 
-  const resolvedFromProfile = useCallback(
-    (p: UserProfile): ResolvedLocation => ({
-      lat: p.lat!,
-      lng: p.lng!,
-      source: p.zipCode ? "zip" : "gps",
-      zipCode: p.zipCode,
-      neighborhood: p.neighborhood,
-    }),
-    [],
+  const applyUserLocation = useCallback(
+    async (resolved: ResolvedLocation, notifyParent: boolean) => {
+      const pin = userMapPinFromResolved(resolved);
+
+      if (mapRef.current && mapReadyRef.current && pinnedConfigRef.current) {
+        syncUserLocationOnMap(resolved, pin, notifyParent);
+        return;
+      }
+
+      setStatus("loading");
+      const config = await resolvePinnedMapConfig();
+      if (config.mode === "none") {
+        setStatus("needs-config");
+        return;
+      }
+
+      await initMap({ lat: resolved.lat, lng: resolved.lng }, config, pin);
+
+      locationAuthorityRef.current = resolved;
+      setLocation(resolved);
+      displayPinRef.current = pin;
+      setDisplayPin(pin);
+
+      if (notifyParent) {
+        onLocationResolvedRef.current?.(resolved, {
+          lat: resolved.lat,
+          lng: resolved.lng,
+        });
+      }
+    },
+    [initMap, resolvePinnedMapConfig, syncUserLocationOnMap],
   );
 
   const syncProfileToMap = useCallback(
     async (p: UserProfile) => {
-      if (p.lat == null || p.lng == null) return;
+      if (locationAuthorityRef.current) return;
 
-      const resolved = resolvedFromProfile(p);
-      setLocation(resolved);
+      const resolved = await resolveLocationFromProfile(p);
+      if (!resolved) return;
 
-      const pin = userMapPinFromResolved(resolved);
-
-      displayPinRef.current = pin;
-      setDisplayPin(pin);
-
-      const map = mapRef.current;
-      if (map && mapReadyRef.current) {
-        const prev = displayPinRef.current;
-        const samePin =
-          prev &&
-          Math.abs(prev.lat - pin.lat) < 1e-6 &&
-          Math.abs(prev.lng - pin.lng) < 1e-6;
-
-        refreshMapLayers(pin);
-        if (!samePin && map.loaded()) {
-          map.easeTo({
-            center: [pin.lng, pin.lat],
-            duration: 0,
-          });
-        }
-        void fetchRequests(geofenceKeysRef.current);
-        return;
-      }
-
-      onLocationResolvedRef.current?.(resolved, {
-        lat: resolved.lat,
-        lng: resolved.lng,
-      });
-
-      const config = await resolvePinnedMapConfig();
-      if (config.mode === "none") {
-        setStatus("needs-config");
-        return;
-      }
-      await initMap(
-        { lat: resolved.lat, lng: resolved.lng },
-        config,
-        pin,
-      );
+      await applyUserLocation(resolved, true);
     },
-    [initMap, resolvePinnedMapConfig, refreshMapLayers, resolvedFromProfile, fetchRequests],
+    [applyUserLocation],
   );
 
   const startWithLocation = useCallback(
     async (resolved: ResolvedLocation) => {
-      setLocation(resolved);
-      setStatus("loading");
-
-      const pin = userMapPinFromResolved(resolved);
-
-      displayPinRef.current = pin;
-      setDisplayPin(pin);
-      onLocationResolvedRef.current?.(resolved, {
-        lat: resolved.lat,
-        lng: resolved.lng,
-      });
-
-      const config = await resolvePinnedMapConfig();
-      if (config.mode === "none") {
-        setStatus("needs-config");
-        return;
-      }
-
-      await initMap(
-        { lat: resolved.lat, lng: resolved.lng },
-        config,
-        pin,
-      );
+      await applyUserLocation(resolved, true);
     },
-    [initMap, resolvePinnedMapConfig],
+    [applyUserLocation],
   );
 
   const bootstrap = useCallback(async () => {
     setStatus("locating");
     setError(null);
-
-    const saved = profileRef.current;
-    if (saved?.lat != null && saved?.lng != null) {
-      await syncProfileToMap(saved);
-      return;
-    }
 
     const config = await resolvePinnedMapConfig();
     if (config.mode === "none") {
@@ -415,40 +407,47 @@ export function NeighborhoodMap({
       return;
     }
 
+    // Prefer fresh GPS each visit so reload does not snap to stale ZIP/profile coords.
     try {
       const resolved = await resolveUserLocation();
       await startWithLocation(resolved);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not load map";
-      setError(message);
-      setStatus(message.includes("map tiles") ? "error" : "needs-location");
+      return;
+    } catch {
+      /* fall through to saved profile or manual ZIP */
     }
+
+    const saved = profileRef.current;
+    if (saved) {
+      await syncProfileToMap(saved);
+      if (locationAuthorityRef.current) return;
+    }
+
+    setError("Location unavailable. Allow GPS or enter your ZIP code below.");
+    setStatus("needs-location");
   }, [startWithLocation, syncProfileToMap, resolvePinnedMapConfig]);
 
+  const bootstrapRef = useRef(bootstrap);
+  bootstrapRef.current = bootstrap;
+
   useEffect(() => {
-    void bootstrap();
+    if (!profileReady || didBootstrapRef.current) return;
+    didBootstrapRef.current = true;
+    void bootstrapRef.current();
     return () => {
       mapReadyRef.current = false;
       setMapReady(false);
       initInFlightRef.current = false;
       pinnedConfigRef.current = null;
+      locationAuthorityRef.current = null;
+      didBootstrapRef.current = false;
       if (mapRef.current) {
         clearUserLocationLayer(mapRef.current);
         mapRef.current.remove();
       }
       mapRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
-  }, []);
-
-  useEffect(() => {
-    if (!mapReady || profile?.lat == null || profile?.lng == null) return;
-    void syncProfileToMap(profile);
-  }, [
-    mapReady,
-    profile,
-    syncProfileToMap,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap once per mount
+  }, [profileReady]);
 
   const handleZipSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -561,6 +560,11 @@ export function NeighborhoodMap({
           {requests.length === 1 ? "" : "s"} in area
           {displayPin ? " · blue = you (only you see this)" : ""}
           {pickedPin ? " · orange = new request location" : ""}
+          {location.source === "zip"
+            ? " · using ZIP center (use Try GPS for your exact spot)"
+            : location.source === "gps"
+              ? " · using device GPS"
+              : ""}
         </p>
       )}
     </div>
