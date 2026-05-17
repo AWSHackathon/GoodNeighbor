@@ -15,6 +15,12 @@ export default function MainLayout({
           <Link href="/map" className="font-medium text-slate-700 hover:text-teal-600">
             Map
           </Link>
+          <Link
+            href="/profile"
+            className="font-medium text-slate-700 hover:text-teal-600"
+          >
+            Profile
+          </Link>
           <UserMenu />
         </nav>
       </header>
