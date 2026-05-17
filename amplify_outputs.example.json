@@ -9,7 +9,27 @@
     "standard_required_attributes": ["email"],
     "username_attributes": ["email"],
     "user_verification_types": ["email"],
-    "unauthenticated_identities_enabled": true
+    "unauthenticated_identities_enabled": true,
+    "oauth": {
+      "identity_providers": ["GOOGLE"],
+      "redirect_sign_in_uri": ["http://127.0.0.1:3000/login"],
+      "redirect_sign_out_uri": ["http://127.0.0.1:3000/"],
+      "response_type": "code",
+      "scopes": ["email", "openid", "profile"],
+      "domain": "good-neighbor-hack2026.auth.us-west-2.amazoncognito.com"
+    }
+  },
+  "custom": {
+    "API": {
+      "GoodNeighborHttpApi": {
+        "endpoint": "https://REPLACE_AFTER_SANDBOX.execute-api.us-west-2.amazonaws.com",
+        "region": "us-west-2",
+        "apiName": "GoodNeighborHttpApi"
+      }
+    },
+    "data": {
+      "tableName": "GoodNeighbor"
+    }
   },
   "geo": {
     "aws_region": "us-west-2",
