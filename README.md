@@ -6,6 +6,8 @@
 
 The map centers on the user’s area—no fixed demo neighborhood. Resolution order: **device GPS** (browser permission) → **IP geolocation** → **manual ZIP** if GPS is denied or IP is wrong. Details are in [docs/PLAN.md](docs/PLAN.md#location-resolution).
 
+**Leaderboard:** The bottom half of `/map` ranks neighbors by **requests completed** and **hours contributed**, scoped to your neighborhood. Use the dropdown to switch **All time** vs **This week**; data refreshes when your neighborhood changes. See [docs/PLAN.md — Leaderboard](docs/PLAN.md#leaderboard).
+
 **Privacy:** Neighbors never see your exact home pin or full address on the map. Request pins use a **buffer zone** (Marketplace-style approximate area). Optional **meeting place** hints stay vague publicly; exact location is shared only in a **private thread** after the requester accepts a helper. See [docs/PLAN.md — Location privacy](docs/PLAN.md#location-privacy).
 
 ## Stack
@@ -47,7 +49,7 @@ Open [http://localhost:3000](http://localhost:3000).
 |-------|-------------|
 | `/` | Landing page with logo |
 | `/login` | Sign in with Google or email (Cognito — Phase 1) |
-| `/map` | Map with obfuscated request area pins + request list (Phase 4+) |
+| `/map` | Top: map + requests; bottom: neighborhood leaderboard with all-time / weekly toggle (Phase 4–6) |
 | `/requests/[id]/thread` | Private chat after accepting a helper (Phase 5) |
 
 ```bash
@@ -66,8 +68,13 @@ app/                    # Next.js pages (landing, login, map, thread stub)
 components/             # React components (Phase 1+)
 lib/
   api/client.ts       # API client stubs (requests, thread, accept)
+  api/leaderboard.ts  # Leaderboard by neighborhood + period
+  leaderboard/        # Mock leaderboard data for UI stub
   location/           # GPS/IP/ZIP resolve + public pin obfuscation
   types/domain.ts     # Public vs private domain types
+  types/leaderboard.ts
+components/
+  LeaderboardPanel.tsx  # Bottom-half table; all-time vs this week
 amplify/functions/api/  # Lambda route stubs (Phase 1+)
 docs/                 # Architecture plan
 public/               # Static assets (logo)
