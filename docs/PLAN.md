@@ -2,6 +2,59 @@
 
 Architecture and implementation phases for the AWS Hackathon 2026 GoodNeightbor app.
 
+## Current status (May 2026)
+
+| Area | Status |
+|------|--------|
+| **Phase 1** — Auth, profiles, sandbox backend | Done (Cognito Google + email, `GET/PUT /profiles/me`, DynamoDB) |
+| **Phase 3–6** — Requests, map pins, respond/accept/thread, fulfill, leaderboard API | **Implemented in code on `main`**; end-to-end flow **not reliably working** in local dev |
+| **Map tiles** | Amazon Location Service (API key or Amplify Geo via sandbox); OSM fallback removed |
+| **Known blocker** | **Help request API** — `GET/POST /requests` often fails from `/map` (red banner: sign out/in, sandbox, restart dev). Posts do not appear on the map until list/create succeeds. |
+
+### What works today
+
+- Landing, login (Google OAuth + email when secrets are set), middleware-protected `/map`
+- Amplify Gen 2 sandbox: Cognito, DynamoDB `GoodNeighbor` table + **GSI1**, HTTP API + Lambda (`amplify/functions/api/`)
+- Map UI: GPS / ZIP centering, click-to-place orange draft pin, teal pins from `GET /requests` when API succeeds
+- UI stubs wired: create request form, request list (respond / accept / fulfill), thread page, leaderboard panel (deployed API + local mock fallback)
+
+### What is broken / in progress
+
+1. **Request API connectivity** — Typical symptoms: `Load failed`, `401 Unauthorized`, or `500` on `GET /requests` or `POST /requests`. Common causes:
+   - `npm run sandbox` not running or stack out of date vs `amplify_outputs.json`
+   - Stale Cognito session after sandbox redeploy (must **sign out and sign in**)
+   - `NEXT_PUBLIC_API_URL` / `amplify_outputs.json` mismatch (run `npm run setup`, restart `npm run dev`)
+2. **Amazon Location API key** — If `NEXT_PUBLIC_AMAZON_LOCATION_API_KEY` is set, the key must allow **Maps** tile actions (not only Places), or remove the key and use sandbox Geo while signed in.
+3. **Geofence key** — Requests are queried by neighborhood/ZIP/coarse `loc-*` bucket; profile without neighborhood/ZIP can yield `unknown` geofence and an empty pin list even when creates succeed under a different key.
+
+### Local dev checklist (when API or posts fail)
+
+```bash
+# Terminal 1 — keep running
+npm run sandbox
+# Wait for: Deployment completed + File written: amplify_outputs.json
+
+# Terminal 2
+npm run setup
+rm -rf .next
+npm run dev
+```
+
+Then: sign **out** at http://127.0.0.1:3000 → sign **in** again → open `/map`, allow location or enter ZIP, post a request (click map for pin first).
+
+### Phase rollup
+
+| Phase | Plan status |
+|-------|-------------|
+| 0 — Baseline | Done |
+| 1 — Identity & profiles | Done |
+| 2 — Hosted shell | Partial (local dev; Amplify Hosting not wired for team yet) |
+| 3 — Posts / requests | **Code on `main`; API integration broken in dev** |
+| 4 — Map & location | **Mostly done** (Amazon tiles, obfuscated pins, pick-on-map); list pins blocked by API |
+| 5 — Respond / thread | **Code on `main`; blocked by API + acceptance flow testing** |
+| 6 — Leaderboard | **API + UI on `main`; verify after requests/fulfill work** |
+| 7 — Demo hardening | Not started |
+
 ## Auth flow
 
 Primary sign-in is **Google OAuth** via Cognito (federated identity). Email/password remains available as a secondary path.
@@ -242,7 +295,7 @@ Deliverables:
 - Maintain the current landing, login, and map stubs as the demo shell.
 - No default geofence; location is user-resolved at runtime.
 
-Status: Done for the current scaffold.
+Status: **Done.**
 
 ### Phase 1 - Identity, roles, and user profiles
 
@@ -262,6 +315,8 @@ Deliverables:
 - User attributes for display name, email, role, neighborhood, and zipCode.
 - Role distinction between resident, neighborhood moderator, and app admin.
 
+Status: **Done** (sandbox + login UI + profile API). Google OAuth requires `npx ampx sandbox secret set` for client ID/secret.
+
 ### Phase 2 - Hosted website and navigation shell
 
 **Goal:** Make the app usable as a deployed web experience.
@@ -277,6 +332,8 @@ Deliverables:
 - Protected `/map` route for authenticated users.
 - Map/cards/list navigation model from the brainstorm.
 - Clear empty/loading/error states for the demo.
+
+Status: **Partial** — routes and layout exist locally; production Amplify Hosting deploy is a team next step.
 
 ### Phase 3 - Core posts, requests, and item sharing
 
@@ -294,6 +351,8 @@ Deliverables:
 - Browse posts as cards/list before map work is complete.
 - Store post status: open, claimed, fulfilled, expired.
 - Add seed/demo data keyed by neighborhood/ZIP (not a single fixed geofence).
+
+Status: **In progress / blocked** — `POST/GET /requests` implemented in `amplify/functions/api/requests-handlers.ts` and `lib/api/client.ts`; **creating and listing posts fails intermittently** until sandbox, auth, and geofence issues above are resolved.
 
 ### Phase 4 - Location, geocoding, and neighborhood map
 
@@ -316,6 +375,8 @@ Deliverables:
 - Browse nearby posts as obfuscated map pins and synchronized list/cards (filter by user's neighborhood/ZIP bucket).
 - Public `GET /requests` never returns `trueLat`/`trueLng`.
 
+Status: **Mostly done** — Amazon Location map, obfuscation, pin pick, `lib/geofence.ts`; pin refresh depends on working Phase 3 API.
+
 ### Phase 5 - Responses, acceptance, and private coordination
 
 **Goal:** Let neighbors act on posts and confirm exact meet-up details only after a trusted match.
@@ -333,6 +394,8 @@ Deliverables:
 - Show post author and response list to requester; helpers see only their own offer state until accepted.
 - Prevent users from responding to their own posts where inappropriate.
 - Add basic moderation affordances for neighborhood admins.
+
+Status: **Code complete; needs E2E verification** after request API is stable (`components/RequestListPanel.tsx`, `RequestThreadView.tsx`, thread routes).
 
 ### Phase 6 - Reputation, reciprocity, and leaderboard
 
@@ -352,6 +415,8 @@ Deliverables:
 - Profile summary of own all-time + weekly stats (optional card above table).
 - Keep scoring explainable; defer badges and anti-gaming beyond basic fulfill validation.
 
+Status: **API + UI on `main`**; leaderboard updates on fulfill need testing once posts work.
+
 ### Phase 7 - Demo readiness, observability, and cost controls
 
 **Goal:** Make the AWS demo reliable, understandable, and affordable.
@@ -368,6 +433,8 @@ Deliverables:
 - Budget alerts for the hackathon AWS account.
 - Build/lint checks before demo.
 - Explicitly defer RDS unless relational reporting becomes necessary; DynamoDB is the MVP data store. If RDS is introduced later, add a stop/start cost-control plan.
+
+Status: **Not started.**
 
 ## Git workflow (team + agent)
 

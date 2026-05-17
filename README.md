@@ -23,11 +23,17 @@ The map centers on the user’s area—no fixed demo neighborhood. Resolution or
 
 ## Project status
 
-**Phase 1 (current):** Amplify Gen 2 backend — Cognito (Google + email), DynamoDB profiles, HTTP API (`GET/PUT /profiles/me`), login UI, route protection. Run `npm run sandbox` to deploy.
+**Where we are (May 2026):** Core MVP is **implemented on `main`** but **local end-to-end is broken** for help requests — the map and forms are wired, yet `GET/POST /requests` often fail until sandbox, auth, and env are aligned.
 
-**Next (Phase 3+):** Help requests CRUD, responses, thread, real leaderboard API.
+| Done | In progress / broken |
+|------|----------------------|
+| Cognito auth (Google + email), profiles API | **Creating and listing posts** via deployed API |
+| Lambda routes: requests, respond, accept, thread, fulfill, leaderboard | Stable geofence + pin refresh after create |
+| `/map` UI: Amazon Location tiles, pin pick, request list, leaderboard panel | Amplify Hosting production deploy |
 
-See [docs/PLAN.md](docs/PLAN.md) for the full architecture and implementation phases.
+**Immediate fix path:** run sandbox, `npm run setup`, restart dev, **sign out and sign in**, then test `/map`. Details and phase rollup: [docs/PLAN.md — Current status](docs/PLAN.md#current-status-may-2026).
+
+See [docs/PLAN.md](docs/PLAN.md) for architecture and phase definitions.
 
 ## Prerequisites
 
@@ -43,25 +49,39 @@ npm run setup   # install deps + create .env.local from .env.example
 npm run dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). After sandbox deploy, sign in at `/login`. Without Cognito deployed, **Preview map** on `/login` still works.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). You need a **running sandbox** and a **fresh sign-in** after each deploy.
 
-Mock API (leaderboard): `GET http://127.0.0.1:3000/api/leaderboard?neighborhood=capitol-hill&period=all`
+### Two terminals (required for requests)
+
+```bash
+# Terminal 1 — backend (keep running)
+npm run sandbox
+
+# Terminal 2 — frontend (after sandbox writes amplify_outputs.json)
+npm run setup
+rm -rf .next
+npm run dev
+```
+
+Then sign out → sign in → `/map`. If you see a red **API:** banner, read the error text; usually auth or sandbox, not a full redeploy. See [docs/PLAN.md — Local dev checklist](docs/PLAN.md#local-dev-checklist-when-api-or-posts-fail).
+
+Mock API (leaderboard only): `GET http://127.0.0.1:3000/api/leaderboard?neighborhood=capitol-hill&period=all`
 
 ### Amazon Location map
 
-The `/map` screen uses **MapLibre GL** with **Amazon Location Service** tiles.
+The `/map` screen uses **MapLibre GL** with **Amazon Location Service** tiles (not OpenStreetMap).
 
-1. **API key (quickest):** Create a map + API key in the [Location Service console](https://console.aws.amazon.com/location/home), then set `NEXT_PUBLIC_AMAZON_LOCATION_API_KEY` in `.env.local` (see `.env.example`).
-2. **Amplify sandbox:** `npm run sandbox` deploys Cognito + `GoodNeighborMap` and generates `amplify_outputs.json`.
+1. **API key:** Set `NEXT_PUBLIC_AMAZON_LOCATION_API_KEY` in `.env.local` — key must allow **Maps** tile access, not only Places.
+2. **Sandbox Geo:** Run `npm run sandbox` and sign in; uses Cognito-backed `GoodNeighborMap` from `amplify_outputs.json`.
 
-Allow browser location or enter a ZIP to center the map. See [amplify/README.md](amplify/README.md).
+`npm run setup` syncs `NEXT_PUBLIC_API_URL` from `amplify_outputs.json`. Allow browser location or enter a ZIP to center the map. See [amplify/README.md](amplify/README.md).
 
 | Route | Description |
 |-------|-------------|
 | `/` | Landing page with logo |
-| `/login` | Sign in with Google or email (Cognito — Phase 1) |
-| `/map` | Top: map + requests; bottom: neighborhood leaderboard with all-time / weekly toggle (Phase 4–6) |
-| `/requests/[id]/thread` | Private chat after accepting a helper (Phase 5) |
+| `/login` | Sign in with Google or email (Cognito) |
+| `/map` | Map + create/list requests + neighborhood leaderboard (**request API currently flaky**) |
+| `/requests/[id]/thread` | Private chat after accepting a helper |
 
 ```bash
 npm run build   # production build
@@ -75,20 +95,22 @@ Copy `.env.example` to `.env.local` when needed. Set `NEXT_PUBLIC_API_URL` after
 ## Repository layout
 
 ```
-app/                    # Next.js pages (landing, login, map, thread stub)
-components/             # React components (Phase 1+)
-lib/
-  api/client.ts       # API client stubs (requests, thread, accept)
-  api/leaderboard.ts  # Leaderboard by neighborhood + period
-  leaderboard/        # Mock leaderboard data for UI stub
-  location/           # GPS/IP/ZIP resolve + public pin obfuscation
-  types/domain.ts     # Public vs private domain types
-  types/leaderboard.ts
+app/                         # Next.js pages (landing, login, map, thread)
 components/
-  LeaderboardPanel.tsx  # Bottom-half table; all-time vs this week
-amplify/functions/api/  # Lambda route stubs (Phase 1+)
-docs/                 # Architecture plan
-public/               # Static assets (logo)
+  NeighborhoodMap.tsx        # Amazon Location map + request pins
+  CreateRequestForm.tsx      # POST /requests
+  RequestListPanel.tsx       # List, respond, accept, fulfill
+  RequestThreadView.tsx      # Private thread UI
+  MapPageView.tsx            # Map page orchestration
+  LeaderboardPanel.tsx
+amplify/
+  backend.ts                 # DynamoDB + HTTP API + Location map
+  functions/api/             # Lambda (profiles, requests-handlers, …)
+lib/
+  api/client.ts              # Deployed API client
+  geofence.ts                # Geofence key for queries
+  map/                       # Amazon map helpers, pins
+docs/PLAN.md                 # Architecture + current status
 ```
 
 ## Git workflow
@@ -104,11 +126,11 @@ Avoid force-pushing `main` unless explicitly agreed by the team.
 
 ## Team next steps
 
-1. Read [docs/PLAN.md](docs/PLAN.md) and [amplify/README.md](amplify/README.md).
-2. Set Google OAuth secrets and run `npm run sandbox`.
-3. Sign in at `/login` and verify profile via API.
-4. Phase 3: implement `POST/GET /requests` in `amplify/functions/api/handler.ts`.
-5. Connect repo to **Amplify Hosting** in the AWS Console.
+1. Read [docs/PLAN.md — Current status](docs/PLAN.md#current-status-may-2026).
+2. **Fix request API in dev:** sandbox running → `npm run setup` → restart dev → sign out/in → debug `GET/POST /requests` in browser Network tab.
+3. Verify create → pins on map → respond → accept → thread → fulfill → leaderboard.
+4. Set Google OAuth secrets if needed: `npx ampx sandbox secret set GOOGLE_CLIENT_ID` (and client secret).
+5. Connect repo to **Amplify Hosting** for a shared demo URL.
 
 ## License
 
