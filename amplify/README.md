@@ -61,3 +61,13 @@ Comment out `google` and `externalProviders` in `auth/resource.ts` if secrets ar
 ## Map
 
 Guest and authenticated IAM roles can call `geo:GetMap*` on **GoodNeighborMap**. Or use an Amazon Location API key in `.env.local` (see root README).
+
+## Production deploy (Amplify Hosting)
+
+Branch deploys use **`amplify.yml`** at the repo root (`npx ampx pipeline-deploy` in CI).
+
+1. Connect **GitHub → main** in the [Amplify Console](https://console.aws.amazon.com/amplify/home).
+2. Set **Secrets** (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) for branch `main` — not sandbox secrets.
+3. After first deploy, set env vars `AMPLIFY_AUTH_CALLBACK_URLS` and `AMPLIFY_AUTH_LOGOUT_URLS` (see `amplify/auth/urls.ts`).
+
+Full checklist: [docs/DEPLOY.md](../docs/DEPLOY.md).

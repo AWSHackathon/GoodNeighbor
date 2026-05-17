@@ -4,11 +4,19 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const root = join(import.meta.dirname, "..");
+const isAmplifyCi = Boolean(process.env.AWS_APP_ID);
 const amplifyDir = join(root, "amplify");
 const envExample = join(root, ".env.example");
 const envLocal = join(root, ".env.local");
 const outputsExample = join(root, "amplify_outputs.example.json");
 const outputsLocal = join(root, "amplify_outputs.json");
+
+if (isAmplifyCi) {
+  console.log(
+    "Amplify CI build — skipping local setup (.env.local, placeholder amplify_outputs).",
+  );
+  process.exit(0);
+}
 
 if (existsSync(join(amplifyDir, "package.json"))) {
   console.log("Installing Amplify backend dependencies (amplify/)…");

@@ -1,5 +1,6 @@
 import { defineAuth, secret } from "@aws-amplify/backend";
 import type { AmplifyAuthProps } from "@aws-amplify/backend-auth";
+import { authCallbackUrls, authLogoutUrls } from "./urls";
 
 type ExternalProviders = NonNullable<
   AmplifyAuthProps["loginWith"]["externalProviders"]
@@ -23,11 +24,8 @@ const externalProviders = {
   },
   // Required at runtime for Google OAuth; omitted from factory TS types.
   domainPrefix: "good-neighbor-hack2026",
-  callbackUrls: [
-    "http://localhost:3000/login",
-    "http://127.0.0.1:3000/login",
-  ],
-  logoutUrls: ["http://localhost:3000/", "http://127.0.0.1:3000/"],
+  callbackUrls: authCallbackUrls(),
+  logoutUrls: authLogoutUrls(),
 } as ExternalProviders;
 
 export const auth = defineAuth({

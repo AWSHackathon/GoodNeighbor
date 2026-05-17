@@ -130,7 +130,7 @@ Avoid force-pushing `main` unless explicitly agreed by the team.
 2. **Fix request API in dev:** sandbox running → `npm run setup` → restart dev → sign out/in → debug `GET/POST /requests` in browser Network tab.
 3. Verify create → pins on map → respond → accept → thread → fulfill → Gratitude Board update.
 4. Set Google OAuth secrets if needed: `npx ampx sandbox secret set GOOGLE_CLIENT_ID` (and client secret).
-5. Connect repo to **Amplify Hosting** for a shared demo URL.
+5. Deploy to **Amplify Hosting** — follow [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## License
 
