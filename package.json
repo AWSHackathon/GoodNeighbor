@@ -10,6 +10,7 @@
     "start": "next start --hostname 127.0.0.1 -p 3000",
     "lint": "next lint",
     "test:obfuscate": "node scripts/verify-obfuscate.mjs",
+    "seed:mock": "node scripts/seed-mock-data.mjs",
     "sandbox": "npm install --prefix amplify && npx ampx sandbox"
   },
   "engines": {
