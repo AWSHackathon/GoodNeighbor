@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   acceptResponse,
   fulfillRequest,
@@ -10,10 +10,18 @@ import {
   respondToRequest,
 } from "@/lib/api/client";
 import { getIdToken } from "@/lib/auth/session";
-import type { HelpRequestResponse, PublicHelpRequest } from "@/lib/types/domain";
+import {
+  formatDistanceMeters,
+  NEARBY_REQUEST_RADIUS_METERS,
+  REQUEST_LIST_PAGE_SIZE,
+  requestDistanceMeters,
+  sortRequestsByDistance,
+} from "@/lib/location/nearby";
+import type { Coordinates, HelpRequestResponse, PublicHelpRequest } from "@/lib/types/domain";
 
 type RequestListPanelProps = {
   requests: PublicHelpRequest[];
+  browseCenter?: Coordinates | null;
   loading?: boolean;
   error?: string | null;
   refreshKey: number;
@@ -22,6 +30,7 @@ type RequestListPanelProps = {
 
 export function RequestListPanel({
   requests,
+  browseCenter = null,
   loading = false,
   error = null,
   refreshKey,
@@ -32,6 +41,31 @@ export function RequestListPanel({
   const [responses, setResponses] = useState<HelpRequestResponse[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+
+  const sortedRequests = useMemo(
+    () => sortRequestsByDistance(requests, browseCenter),
+    [requests, browseCenter?.lat, browseCenter?.lng],
+  );
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(sortedRequests.length / REQUEST_LIST_PAGE_SIZE),
+  );
+  const safePage = Math.min(page, totalPages - 1);
+  const pageRequests = sortedRequests.slice(
+    safePage * REQUEST_LIST_PAGE_SIZE,
+    safePage * REQUEST_LIST_PAGE_SIZE + REQUEST_LIST_PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setPage(0);
+    setExpandedId(null);
+  }, [refreshKey, sortedRequests.length, browseCenter?.lat, browseCenter?.lng]);
+
+  useEffect(() => {
+    if (page >= totalPages) setPage(Math.max(0, totalPages - 1));
+  }, [page, totalPages]);
 
   useEffect(() => {
     void (async () => {
@@ -131,22 +165,36 @@ export function RequestListPanel({
     );
   }
 
-  if (requests.length === 0) {
+  if (sortedRequests.length === 0) {
     return (
       <p className="mt-6 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-        No requests in your area yet. Post one to get started.
+        No requests within ~
+        {Math.round(NEARBY_REQUEST_RADIUS_METERS / 1000)} km of your location yet.
+        Post one to get started.
       </p>
     );
   }
 
+  const radiusKm = Math.round(NEARBY_REQUEST_RADIUS_METERS / 1000);
+
   return (
-    <ul className="mt-4 space-y-3 overflow-y-auto">
+    <div className="mt-4 flex min-h-0 flex-1 flex-col">
+      <p className="shrink-0 text-xs text-slate-500">
+        {sortedRequests.length} request{sortedRequests.length === 1 ? "" : "s"}{" "}
+        within ~{radiusKm} km
+        {browseCenter ? " · nearest first" : ""}
+      </p>
+      <ul className="mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto">
       {actionError && (
         <li className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
           {actionError}
         </li>
       )}
-      {requests.map((req) => {
+      {pageRequests.map((req) => {
+        const distanceLabel =
+          browseCenter && !req.isOwn
+            ? formatDistanceMeters(requestDistanceMeters(browseCenter, req))
+            : null;
         const isExpanded = expandedId === req.id;
         const statusLabel =
           req.status === "open"
@@ -162,6 +210,7 @@ export function RequestListPanel({
           >
             <RequestCardBody
               req={req}
+              distanceLabel={distanceLabel}
               isExpanded={isExpanded}
               statusLabel={statusLabel}
               mySub={mySub}
@@ -175,12 +224,49 @@ export function RequestListPanel({
           </li>
         );
       })}
-    </ul>
+      </ul>
+      {totalPages > 1 && (
+        <nav
+          className="mt-3 flex shrink-0 items-center justify-between border-t border-slate-200 pt-3"
+          aria-label="Requests pagination"
+        >
+          <button
+            type="button"
+            disabled={safePage === 0}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <span className="text-xs text-slate-600">
+            Page {safePage + 1} of {totalPages}
+            <span className="text-slate-400">
+              {" "}
+              · {safePage * REQUEST_LIST_PAGE_SIZE + 1}–
+              {Math.min(
+                (safePage + 1) * REQUEST_LIST_PAGE_SIZE,
+                sortedRequests.length,
+              )}{" "}
+              of {sortedRequests.length}
+            </span>
+          </span>
+          <button
+            type="button"
+            disabled={safePage >= totalPages - 1}
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </nav>
+      )}
+    </div>
   );
 }
 
 function RequestCardBody(props: {
   req: PublicHelpRequest;
+  distanceLabel: string | null;
   isExpanded: boolean;
   statusLabel: string;
   mySub: string | null;
@@ -193,6 +279,7 @@ function RequestCardBody(props: {
 }) {
   const {
     req,
+    distanceLabel,
     isExpanded,
     statusLabel,
     mySub,
@@ -211,6 +298,8 @@ function RequestCardBody(props: {
           <p className="font-medium text-slate-900">{req.title}</p>
           <p className="mt-1 text-xs text-slate-500">
             {req.authorDisplayName} · {statusLabel}
+            {distanceLabel ? ` · ${distanceLabel} away` : null}
+            {req.isOwn ? " · Your post" : null}
           </p>
         </div>
         <button
