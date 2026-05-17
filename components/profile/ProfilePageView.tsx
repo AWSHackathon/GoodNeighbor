@@ -246,7 +246,7 @@ export function ProfilePageView() {
             <p className="text-sm text-slate-600">
               Contribution in{" "}
               <span className="font-medium text-slate-800">{nhLabel}</span>{" "}
-              (leaderboard geofence: {nh.neighborhood})
+              (Gratitude Board area: {nh.neighborhood})
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
