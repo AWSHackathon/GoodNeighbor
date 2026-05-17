@@ -86,3 +86,27 @@ export interface UserProfile extends PublicProfile {
   createdAt: string;
   updatedAt?: string;
 }
+
+export interface UserUsageMetrics {
+  requestsPosted: number;
+  responsesSubmitted: number;
+  helpsCompleted: number;
+  hoursContributed: number;
+  lastActiveAt?: string;
+}
+
+export interface NeighborhoodContribution {
+  neighborhood: string;
+  allTime: { requestsCompleted: number; hoursContributed: number };
+  thisWeek: {
+    requestsCompleted: number;
+    hoursContributed: number;
+    weekId: string;
+  };
+}
+
+/** Response from GET /profiles/me (and PUT). */
+export interface UserProfileWithMetrics extends UserProfile {
+  usageMetrics: UserUsageMetrics;
+  neighborhoodContribution?: NeighborhoodContribution;
+}
