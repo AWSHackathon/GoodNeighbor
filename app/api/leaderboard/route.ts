@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getMockLeaderboard } from "@/lib/leaderboard/mockData";
+import {
+  parseLeaderboardLimit,
+  parseLeaderboardPage,
+} from "@/lib/leaderboard/paginate";
 import type { LeaderboardPeriod } from "@/lib/types/leaderboard";
 
 /** Local mock for GET /leaderboard (Phase 6 Lambda). */
@@ -7,6 +11,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const neighborhood = searchParams.get("neighborhood");
   const period = (searchParams.get("period") ?? "all") as LeaderboardPeriod;
+  const page = parseLeaderboardPage(searchParams.get("page"));
+  const limit = parseLeaderboardLimit(searchParams.get("limit"));
 
   if (!neighborhood) {
     return NextResponse.json(
@@ -22,5 +28,7 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json(getMockLeaderboard(neighborhood, period));
+  return NextResponse.json(
+    getMockLeaderboard(neighborhood, period, page, limit),
+  );
 }
