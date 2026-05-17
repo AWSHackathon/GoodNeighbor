@@ -20,7 +20,7 @@ export default function LandingPage() {
           Sign in
         </Link>
         <p className="mt-4 text-sm text-slate-500">
-          Phase 0 — Cognito auth coming in Phase 1
+          Sign in with Google or email — profiles stored in DynamoDB
         </p>
       </div>
     </main>
