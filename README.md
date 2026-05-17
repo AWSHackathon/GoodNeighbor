@@ -47,6 +47,15 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Use **Preview map** on `/lo
 
 Mock API (leaderboard): `GET http://127.0.0.1:3000/api/leaderboard?neighborhood=capitol-hill&period=all`
 
+### Amazon Location map
+
+The `/map` screen uses **MapLibre GL** with **Amazon Location Service** tiles.
+
+1. **API key (quickest):** Create a map + API key in the [Location Service console](https://console.aws.amazon.com/location/home), then set `NEXT_PUBLIC_AMAZON_LOCATION_API_KEY` in `.env.local` (see `.env.example`).
+2. **Amplify sandbox:** `npm run sandbox` deploys Cognito + `GoodNeighborMap` and generates `amplify_outputs.json`.
+
+Allow browser location or enter a ZIP to center the map. See [amplify/README.md](amplify/README.md).
+
 | Route | Description |
 |-------|-------------|
 | `/` | Landing page with logo |
