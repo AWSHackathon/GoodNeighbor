@@ -76,6 +76,7 @@ const routes: Record<string, ApiRouteHandler> = {
     notImplemented("GET /requests/{id}/thread"),
   "POST /requests/{id}/thread/messages": async () =>
     notImplemented("POST /requests/{id}/thread/messages"),
+  "GET /leaderboard": async () => notImplemented("GET /leaderboard"),
 };
 
 export const handler: ApiRouteHandler = async (event) => {
