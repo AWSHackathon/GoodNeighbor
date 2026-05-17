@@ -1,5 +1,5 @@
 /**
- * Map center resolution: GPS → IP → manual ZIP (docs/PLAN.md#location-resolution).
+ * Map center resolution: GPS → manual ZIP (docs/PLAN.md#location-resolution).
  * Resolved coordinates are private; only neighborhood/ZIP are published on profile.
  */
 
@@ -18,31 +18,6 @@ export interface ResolveLocationOptions {
   gpsTimeoutMs?: number;
 }
 
-const NOT_IMPLEMENTED =
-  "Location resolution requires Phase 1 (Amplify API + Amazon Location).";
-
-/**
- * Resolve where to center the map and which geofence bucket to query.
- */
-export async function resolveUserLocation(
-  _options: ResolveLocationOptions = {},
-): Promise<ResolvedLocation> {
-  if (typeof navigator !== "undefined" && navigator.geolocation) {
-    try {
-      const position = await getBrowserPosition(_options.gpsTimeoutMs ?? 10_000);
-      return {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        source: "gps",
-      };
-    } catch {
-      // fall through to IP / ZIP in Phase 1
-    }
-  }
-
-  throw new Error(NOT_IMPLEMENTED);
-}
-
 function getBrowserPosition(timeoutMs: number): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -53,15 +28,40 @@ function getBrowserPosition(timeoutMs: number): Promise<GeolocationPosition> {
   });
 }
 
-/** Phase 1: Amazon Location IP geolocation via API. */
-export async function resolveLocationFromIp(): Promise<ResolvedLocation> {
-  throw new Error(NOT_IMPLEMENTED);
+/**
+ * Resolve where to center the map and which geofence bucket to query.
+ */
+export async function resolveUserLocation(
+  options: ResolveLocationOptions = {},
+): Promise<ResolvedLocation> {
+  if (typeof navigator !== "undefined" && navigator.geolocation) {
+    try {
+      const position = await getBrowserPosition(options.gpsTimeoutMs ?? 10_000);
+      return {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        source: "gps",
+      };
+    } catch {
+      // fall through to ZIP / manual
+    }
+  }
+
+  throw new Error(
+    "Location unavailable. Allow GPS or enter your ZIP code below.",
+  );
 }
 
-/** Phase 1: geocode ZIP via Places, return center + neighborhood label. */
+/** Geocode ZIP via Amazon Location Places (server route). */
 export async function resolveLocationFromZip(
   zipCode: string,
 ): Promise<ResolvedLocation> {
-  void zipCode;
-  throw new Error(NOT_IMPLEMENTED);
+  const params = new URLSearchParams({ zip: zipCode.trim() });
+  const res = await fetch(`/api/location/geocode?${params}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Geocode failed (${res.status})`);
+  }
+  const data = (await res.json()) as ResolvedLocation;
+  return data;
 }
