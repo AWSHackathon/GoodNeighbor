@@ -335,15 +335,38 @@ export async function waitForMapLoad(
   });
 }
 
+export type EnsureMapLoadedOptions = {
+  /**
+   * API-key maps must receive the load event before pins render.
+   * Amplify/Cognito maps often render usable tiles before `load` fires (especially
+   * after pan/zoom); treating a slow load as failure caused a switch to the basic
+   * Standard API-key style mid-session.
+   */
+  strict?: boolean;
+};
+
 /** Wait for Amazon Location tiles to finish loading. */
 export async function ensureMapLoaded(
   map: MapLibreMap,
   _center: Coordinates,
+  options: EnsureMapLoadedOptions = {},
 ): Promise<void> {
-  const loaded = await waitForMapLoad(map, 15_000);
-  if (!loaded) {
-    throw new Error(
-      "Amazon Location map tiles could not load. Check your API key scopes or sign in after sandbox deploy.",
-    );
+  const strict = options.strict ?? true;
+  const timeoutMs = strict ? 15_000 : 30_000;
+
+  if (map.loaded()) return;
+
+  const loaded = await waitForMapLoad(map, timeoutMs);
+  if (loaded) return;
+
+  if (!strict) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    if (map.loaded() || map.isStyleLoaded()) return;
   }
+
+  throw new Error(
+    "Amazon Location map tiles could not load. Sign in after `npm run sandbox`, or remove " +
+      "NEXT_PUBLIC_AMAZON_LOCATION_API_KEY from .env.local to use the sandbox map. " +
+      "If you keep an API key, allow geo-maps:GetTile on the default map provider in the Location console.",
+  );
 }
