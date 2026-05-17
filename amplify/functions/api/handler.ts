@@ -9,7 +9,17 @@ import {
   PutCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
-import type { ProfileRecord, UserProfile } from "./handler-types.js";
+import type {
+  ProfileRecord,
+  UserProfile,
+  UserProfileWithMetrics,
+} from "./handler-types.js";
+import {
+  getNeighborhoodContribution,
+  getOrCreateStats,
+  toUsageMetrics,
+  touchStatsActivity,
+} from "./profile-stats.js";
 import {
   handleAcceptResponse,
   handleCreateRequest,
@@ -35,6 +45,26 @@ function profileKeys(sub: string) {
 function toProfile(record: ProfileRecord): UserProfile {
   const { PK: _pk, SK: _sk, updatedAt, ...profile } = record;
   return { ...profile, updatedAt };
+}
+
+async function toProfileWithMetrics(
+  record: ProfileRecord,
+): Promise<UserProfileWithMetrics> {
+  if (!TABLE_NAME) throw new Error("TABLE_NAME not configured");
+
+  const stats = await getOrCreateStats(doc, TABLE_NAME, record.sub);
+  const neighborhoodContribution = await getNeighborhoodContribution(
+    doc,
+    TABLE_NAME,
+    record.sub,
+    record,
+  );
+
+  return {
+    ...toProfile(record),
+    usageMetrics: toUsageMetrics(stats),
+    neighborhoodContribution,
+  };
 }
 
 function displayNameFromClaims(event: ApiGatewayEvent, email: string): string {
@@ -108,7 +138,7 @@ async function handleGetProfileMe(event: ApiGatewayEvent) {
 
   const existing = await getProfileRecord(sub);
   if (existing) {
-    return json(200, toProfile(existing));
+    return json(200, await toProfileWithMetrics(existing));
   }
 
   const now = new Date().toISOString();
@@ -130,7 +160,7 @@ async function handleGetProfileMe(event: ApiGatewayEvent) {
     }),
   );
 
-  return json(201, toProfile(record));
+  return json(201, await toProfileWithMetrics(record));
 }
 
 async function handlePutProfileMe(event: ApiGatewayEvent) {
@@ -179,15 +209,6 @@ async function handlePutProfileMe(event: ApiGatewayEvent) {
     record.lng = typeof body.lng === "number" ? body.lng : undefined;
   }
 
-  if (
-    body.role !== undefined &&
-    (body.role === "resident" ||
-      body.role === "moderator" ||
-      body.role === "admin")
-  ) {
-    record.role = body.role;
-  }
-
   record.email = email;
   record.updatedAt = now;
 
@@ -198,7 +219,9 @@ async function handlePutProfileMe(event: ApiGatewayEvent) {
     }),
   );
 
-  return json(200, toProfile(record));
+  await touchStatsActivity(doc, TABLE_NAME!, sub);
+
+  return json(200, await toProfileWithMetrics(record));
 }
 
 function parseSegments(rawPath: string): string[] {
