@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getLeaderboard } from "@/lib/api/client";
 import { getIdToken } from "@/lib/auth/session";
 import { canonicalLeaderboardGeofence } from "@/lib/geofence";
+import {
+  GRATITUDE_BOARD_TAGLINE,
+  GRATITUDE_BOARD_TITLE,
+} from "@/lib/gratitude-board";
 import { getMockLeaderboard } from "@/lib/leaderboard/mockData";
 import type {
   LeaderboardPeriod,
@@ -123,11 +127,12 @@ export function LeaderboardPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-6">
         <div>
           <p className="text-sm font-medium uppercase tracking-wide text-teal-700">
-            Leaderboard
+            {GRATITUDE_BOARD_TITLE}
           </p>
           <h2 className="text-lg font-semibold text-slate-900">
             {display.neighborhoodLabel}
           </h2>
+          <p className="mt-0.5 text-xs text-slate-500">{GRATITUDE_BOARD_TAGLINE}</p>
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <span className="sr-only">Time period</span>
@@ -149,7 +154,7 @@ export function LeaderboardPanel({
         <div className="min-h-0 flex-1 overflow-auto px-4 py-2 sm:px-6">
           {!hasVisibleRows(display) ? (
             <p className="py-8 text-center text-sm text-slate-500">
-              No contributions yet. Fulfill a request to appear here.
+              No good deeds yet. Help a neighbor to earn gratitude here.
             </p>
           ) : (
             <table className="w-full text-left text-sm">
@@ -189,7 +194,7 @@ export function LeaderboardPanel({
         {pagination && pagination.totalCount > 0 ? (
           <nav
             className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-2 sm:px-6"
-            aria-label="Leaderboard pagination"
+            aria-label="Gratitude Board pagination"
           >
             <button
               type="button"
@@ -242,7 +247,7 @@ export function LeaderboardPanel({
             : null}
           {usingMock
             ? "Showing demo neighbors (run npm run seed:mock for live data)"
-            : "Updates when requests are fulfilled"}
+            : "Ranks neighbors by fulfilled helps in your area"}
         </p>
       </div>
     </section>
