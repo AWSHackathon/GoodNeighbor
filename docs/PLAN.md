@@ -53,6 +53,47 @@ flowchart LR
 5. See others' pins with author (public area only); respond to requests  
 6. Requester **accepts** one helper's offer → private thread opens to confirm pickup/meet-up details  
 7. Optional **meeting place** hint on the request (public, vague); exact address only in private chat after acceptance  
+8. **Neighborhood leaderboard** on the bottom half of `/map`: requests completed and hours contributed, scoped to the viewer’s neighborhood, toggle **All time** / **This week**  
+
+## Map screen layout
+
+`/map` uses a vertical split: **top ~50%** for map + request list (side by side on large screens), **bottom ~50%** for the neighborhood leaderboard. Changing the user’s resolved neighborhood (GPS / ZIP / **Change location**) refetches leaderboard data for that geofence.
+
+```
+┌──────────────── Map (~25%) ────────────────┬── Requests (~25%) ──┐  top 50%
+├──────────────── Leaderboard (full width) ─────────────────────────┤  bottom 50%
+│  Capitol Hill · [ All time ▼ ]                                    │
+│  Rank  Name              Requests    Hours                          │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## Leaderboard
+
+Track neighbor contributions per **neighborhood** (same geofence key as requests). Rank by helpful activity so takers are encouraged to give back.
+
+| Metric | All time | This week |
+|--------|----------|-----------|
+| **Requests completed** | Count of fulfilled helps (helper or requester role, per product rule) | Same, filtered to ISO week of `fulfilledAt` |
+| **Hours contributed** | Sum of logged duration on fulfilled requests | Sum for current calendar week (UTC or US-Pacific — pick one in Phase 6) |
+
+| UX | Detail |
+|----|--------|
+| Placement | Bottom half of `/map`, always visible on the home screen |
+| Period toggle | Dropdown: **All time** \| **This week** — client passes `period=all` or `period=week` to API |
+| Neighborhood scope | Leaderboard title shows active neighborhood label; updates when user changes location or profile geofence |
+| Sort | Primary: hours contributed (desc), tie-break: requests completed (desc) |
+| Hours source | Set when a request is marked `fulfilled` (helper reports or requester confirms duration in thread — MVP: single `hoursContributed` number on fulfill) |
+| Privacy | Display names only; no exact addresses on leaderboard |
+
+```mermaid
+flowchart LR
+  Fulfill[Request fulfilled] --> Stats[Increment neighborhood stats]
+  Stats --> AllTime[LEADER ALL record]
+  Stats --> Week[LEADER WEEK record]
+  MapUI[Map page] --> API[GET /leaderboard]
+  API --> AllTime
+  API --> Week
+```
 
 ## Location privacy
 
@@ -136,8 +177,10 @@ Resolution uses full accuracy **internally** (geofence queries, obfuscation seed
 app/
 ├── page.tsx                 # Landing → /login
 ├── (auth)/login/page.tsx    # Sign in + sign up
-└── (main)/map/page.tsx      # Split map (protected)
+└── (main)/map/page.tsx      # Top: map + requests; bottom: leaderboard (Phase 6)
     └── requests/[id]/thread  # Private chat after offer accepted (Phase 5)
+components/
+└── LeaderboardPanel.tsx     # Period dropdown + neighborhood-scoped table
 ```
 
 ## DynamoDB model
@@ -149,6 +192,8 @@ app/
 | Response | `REQUEST#<id>` | `RESPONSE#<responderSub>` | — | Status: `pending` \| `accepted` \| `declined` |
 | Thread | `REQUEST#<id>` | `THREAD#<acceptedSub>` | — | Private messages; exact location / meet-up details after acceptance |
 | Message | `REQUEST#<id>` | `MSG#<ts>#<id>` | — | Belongs to accepted requester ↔ helper pair only |
+| LeaderboardEntry | `GEOFENCE#<neighborhood>` | `LEADER#ALL#<sub>` | `LEADERBOARD#<nh>#ALL#<hours>` | `requestsCompleted`, `hoursContributed`, `displayName` |
+| LeaderboardEntry (week) | `GEOFENCE#<neighborhood>` | `LEADER#WEEK#<isoWeek>#<sub>` | `LEADERBOARD#<nh>#WEEK#<isoWeek>#<hours>` | Reset each ISO week; same metrics |
 
 ## Lambda API
 
@@ -162,8 +207,16 @@ app/
 | POST | `/requests/:id/responses/:responseId/accept` | Requester accepts one helper; opens thread |
 | GET | `/requests/:id/thread` | Participants only (accepted requester + helper) |
 | POST | `/requests/:id/thread/messages` | Participants only — exact address / coordination |
+| GET | `/leaderboard?neighborhood=<id>&period=all\|week` | Authenticated; returns ranked rows for geofence + period |
 
-Map center and zoom come from [Location resolution](#location-resolution) (GPS → IP → ZIP), not a fixed demo coordinate.
+Map center and zoom come from [Location resolution](#location-resolution) (GPS → IP → ZIP), not a fixed demo coordinate. Leaderboard `neighborhood` matches the active geofence key from profile or **Change location**.
+
+Query params:
+
+| Param | Values | Default |
+|-------|--------|---------|
+| `neighborhood` | Geofence id (e.g. ZIP or neighborhood slug) | Required |
+| `period` | `all` \| `week` | `all` |
 
 ## Implementation phases
 
@@ -283,19 +336,21 @@ Deliverables:
 
 ### Phase 6 - Reputation, reciprocity, and leaderboard
 
-**Goal:** Address the brainstorm question: "How do you incentivize takers to give?"
+**Goal:** Address the brainstorm question: "How do you incentivize takers to give?" Surface contribution on the map home screen.
 
 | Area | Services incorporated |
 |------|-----------------------|
-| AWS services | DynamoDB counters/transactions, leaderboard GSI, Lambda reputation service, CloudWatch metrics |
-| Other services/tools | Reputation rules, badges, anti-gaming checks, admin review workflow |
+| AWS services | DynamoDB counters/transactions, leaderboard GSI, Lambda reputation + leaderboard handlers, CloudWatch metrics |
+| Other services/tools | `LeaderboardPanel`, period dropdown, neighborhood refetch on location change |
 
 Deliverables:
 
-- Award points for fulfilled gives, helpful responses, and verified contributions.
-- Show a neighborhood leaderboard or contribution summary.
-- Add profile reputation totals and recent activity.
-- Keep scoring explainable and lightweight for the hackathon demo.
+- On `fulfilled`, atomically increment `requestsCompleted` and `hoursContributed` for helper (and rules for requester if applicable) in **all-time** and **current-week** items per neighborhood.
+- `GET /leaderboard?neighborhood=&period=all|week` — sorted list for [Leaderboard](#leaderboard) UI.
+- **Bottom half of `/map`**: `LeaderboardPanel` with **All time** / **This week** dropdown; refetch when neighborhood changes.
+- Columns: rank, display name, requests completed, hours contributed.
+- Profile summary of own all-time + weekly stats (optional card above table).
+- Keep scoring explainable; defer badges and anti-gaming beyond basic fulfill validation.
 
 ### Phase 7 - Demo readiness, observability, and cost controls
 
