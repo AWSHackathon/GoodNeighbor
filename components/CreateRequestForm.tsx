@@ -97,7 +97,7 @@ export function CreateRequestForm({
       {location && (
         <p className="text-xs font-medium text-amber-800">
           Request pin set — neighbors will see a teal pin in this approximate area
-          (~400–800 m), not your exact address.
+          (~40–80 m), not your exact address.
         </p>
       )}
       <TitleSuggestions onPick={setTitle} />
