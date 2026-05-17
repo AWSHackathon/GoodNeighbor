@@ -26,11 +26,14 @@ export function getPublicMapConfig(): MapConfig {
   const apiKey = process.env.NEXT_PUBLIC_AMAZON_LOCATION_API_KEY?.trim();
   const region =
     process.env.NEXT_PUBLIC_AWS_REGION?.trim() ?? "us-west-2";
-  const styleName =
-    process.env.NEXT_PUBLIC_LOCATION_MAP_STYLE?.trim() ?? "Standard";
-
   if (apiKey) {
-    return { mode: "api-key", apiKey, region, styleName };
+    return {
+      mode: "api-key",
+      apiKey,
+      region,
+      // API keys on the v2 styles endpoint support "Standard"; sandbox map styles use Cognito.
+      styleName: "Standard",
+    };
   }
 
   return { mode: "amplify", hasGeo: false };
@@ -67,34 +70,36 @@ export function getAmplifyGeoMapSettings(outputs: unknown): {
   return { region, styleName };
 }
 
+/** API key map config when NEXT_PUBLIC_AMAZON_LOCATION_API_KEY is set. */
+export function resolveApiKeyMapConfig(outputs?: unknown): ApiKeyMapConfig | null {
+  const apiKey = process.env.NEXT_PUBLIC_AMAZON_LOCATION_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  const geo = outputs ? getAmplifyGeoMapSettings(outputs) : null;
+  return {
+    mode: "api-key",
+    apiKey,
+    region:
+      geo?.region ??
+      process.env.NEXT_PUBLIC_AWS_REGION?.trim() ??
+      "us-east-1",
+    styleName: "Standard",
+  };
+}
+
 /**
- * Prefer Amplify Geo (Cognito-backed tiles) when sandbox deployed geo exists;
- * otherwise fall back to API key from env.
+ * Prefer a working API key when present; otherwise Cognito-backed Amplify Geo.
  */
 export async function resolveMapConfig(): Promise<MapConfig> {
   try {
     const mod = await import("@/amplify_outputs.json");
     const outputs = mod.default ?? mod;
 
+    const apiKeyConfig = resolveApiKeyMapConfig(outputs);
+    if (apiKeyConfig) return apiKeyConfig;
+
     if (hasAmplifyGeo(outputs)) {
       return { mode: "amplify", hasGeo: true };
-    }
-
-    const apiKey = process.env.NEXT_PUBLIC_AMAZON_LOCATION_API_KEY?.trim();
-    if (apiKey) {
-      const geo = getAmplifyGeoMapSettings(outputs);
-      return {
-        mode: "api-key",
-        apiKey,
-        region:
-          geo?.region ??
-          process.env.NEXT_PUBLIC_AWS_REGION?.trim() ??
-          "us-east-1",
-        styleName:
-          geo?.styleName ??
-          process.env.NEXT_PUBLIC_LOCATION_MAP_STYLE?.trim() ??
-          "Standard",
-      };
     }
   } catch {
     // outputs not generated yet
