@@ -1,5 +1,5 @@
 /**
- * Good Neighbor HTTP API (Phase 1+: profiles; later routes return 501).
+ * Good Neighbor HTTP API — profiles, requests, threads, leaderboard.
  */
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
@@ -9,93 +9,31 @@ import {
   PutCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
+import type { ProfileRecord, UserProfile } from "./handler-types.js";
+import {
+  handleAcceptResponse,
+  handleCreateRequest,
+  handleFulfillRequest,
+  handleGetLeaderboard,
+  handleGetThread,
+  handleListRequests,
+  handleListResponses,
+  handlePostThreadMessage,
+  handleRespond,
+} from "./requests-handlers.js";
+import type { ApiGatewayEvent } from "./event.js";
+import { getClaim, getSub, parseJsonBody } from "./event.js";
+import { CORS_HEADERS, json, type ApiJsonResponse } from "./response.js";
 
 const TABLE_NAME = process.env.TABLE_NAME;
 const doc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-
-export type UserRole = "resident" | "moderator" | "admin";
-
-export interface UserProfile {
-  sub: string;
-  email: string;
-  displayName: string;
-  role: UserRole;
-  neighborhood?: string;
-  zipCode?: string;
-  lat?: number;
-  lng?: number;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-interface ProfileRecord extends UserProfile {
-  PK: string;
-  SK: string;
-}
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-  "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
-};
-
-function json(statusCode: number, data: unknown) {
-  return {
-    statusCode,
-    headers: CORS_HEADERS,
-    body: JSON.stringify(data),
-  };
-}
-
-type ApiGatewayEvent = Parameters<APIGatewayProxyHandlerV2>[0];
-
-/** HTTP API + Cognito JWT authorizer (not in default APIGatewayEventRequestContextV2 types). */
-type RequestContextWithJwt = ApiGatewayEvent["requestContext"] & {
-  authorizer?: {
-    jwt?: {
-      claims?: Record<string, string | number | boolean>;
-    };
-  };
-};
-
-function getRouteKey(event: ApiGatewayEvent): string {
-  const method = event.requestContext.http.method;
-  const path = event.rawPath;
-  return `${method} ${path}`;
-}
-
-function getJwtClaims(
-  event: ApiGatewayEvent,
-): Record<string, string | number | boolean> | undefined {
-  const ctx = event.requestContext as RequestContextWithJwt;
-  return ctx.authorizer?.jwt?.claims;
-}
-
-function getSub(event: ApiGatewayEvent): string | undefined {
-  const claims = getJwtClaims(event);
-  if (!claims) return undefined;
-  const sub = claims.sub;
-  return typeof sub === "string" ? sub : undefined;
-}
-
-function getClaim(event: ApiGatewayEvent, key: string): string | undefined {
-  const claims = getJwtClaims(event);
-  if (!claims) return undefined;
-  const value = claims[key];
-  return typeof value === "string" ? value : undefined;
-}
 
 function profileKeys(sub: string) {
   return { PK: `USER#${sub}`, SK: "PROFILE" };
 }
 
 function toProfile(record: ProfileRecord): UserProfile {
-  const {
-    PK: _pk,
-    SK: _sk,
-    updatedAt,
-    ...profile
-  } = record;
+  const { PK: _pk, SK: _sk, updatedAt, ...profile } = record;
   return { ...profile, updatedAt };
 }
 
@@ -119,6 +57,46 @@ async function getProfileRecord(sub: string): Promise<ProfileRecord | null> {
     }),
   );
   return (result.Item as ProfileRecord | undefined) ?? null;
+}
+
+async function ensureProfileRecord(
+  event: ApiGatewayEvent,
+  sub: string,
+): Promise<ProfileRecord | null> {
+  const existing = await getProfileRecord(sub);
+  if (existing) return existing;
+
+  const email = getClaim(event, "email");
+  if (!email || !TABLE_NAME) return null;
+
+  const now = new Date().toISOString();
+  const record: ProfileRecord = {
+    ...profileKeys(sub),
+    sub,
+    email,
+    displayName: displayNameFromClaims(event, email),
+    role: "resident",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await doc.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: record,
+        ConditionExpression: "attribute_not_exists(PK)",
+      }),
+    );
+  } catch (err) {
+    const name = err && typeof err === "object" && "name" in err ? err.name : "";
+    if (name === "ConditionalCheckFailedException") {
+      return getProfileRecord(sub);
+    }
+    throw err;
+  }
+
+  return record;
 }
 
 async function handleGetProfileMe(event: ApiGatewayEvent) {
@@ -161,7 +139,7 @@ async function handlePutProfileMe(event: ApiGatewayEvent) {
 
   let body: Partial<UserProfile>;
   try {
-    body = event.body ? (JSON.parse(event.body) as Partial<UserProfile>) : {};
+    body = parseJsonBody<Partial<UserProfile>>(event);
   } catch {
     return json(400, { error: "Invalid JSON body" });
   }
@@ -223,39 +201,103 @@ async function handlePutProfileMe(event: ApiGatewayEvent) {
   return json(200, toProfile(record));
 }
 
-function notImplemented(routeKey: string) {
-  return json(501, { error: "Not implemented", routeKey });
+function parseSegments(rawPath: string): string[] {
+  return rawPath.split("/").filter(Boolean);
 }
 
-const routes: Record<
-  string,
-  (event: ApiGatewayEvent) => Promise<ReturnType<typeof json>>
-> = {
+type RoutedHandler = (
+  event: ApiGatewayEvent,
+) => Promise<ApiJsonResponse>;
+
+async function routeRequest(event: ApiGatewayEvent): Promise<ApiJsonResponse> {
+  if (!TABLE_NAME) {
+    return json(500, { error: "TABLE_NAME not configured" });
+  }
+
+  const method = event.requestContext.http.method;
+  const segments = parseSegments(event.rawPath);
+
+  if (method === "GET" && segments.length === 1 && segments[0] === "requests") {
+    return handleListRequests(event, doc, TABLE_NAME);
+  }
+  if (method === "POST" && segments.length === 1 && segments[0] === "requests") {
+    return handleCreateRequest(
+      event,
+      doc,
+      TABLE_NAME,
+      getProfileRecord,
+      (sub, ev) => ensureProfileRecord(ev, sub),
+    );
+  }
+  if (method === "GET" && segments.length === 1 && segments[0] === "leaderboard") {
+    return handleGetLeaderboard(event, doc, TABLE_NAME);
+  }
+
+  if (segments[0] === "requests" && segments.length >= 2) {
+    const requestId = segments[1];
+
+    if (method === "POST" && segments.length === 3 && segments[2] === "respond") {
+      return handleRespond(event, doc, TABLE_NAME, requestId, getProfileRecord);
+    }
+    if (method === "POST" && segments.length === 3 && segments[2] === "fulfill") {
+      return handleFulfillRequest(event, doc, TABLE_NAME, requestId, getProfileRecord);
+    }
+    if (method === "GET" && segments.length === 3 && segments[2] === "responses") {
+      return handleListResponses(event, doc, TABLE_NAME, requestId);
+    }
+    if (method === "GET" && segments.length === 3 && segments[2] === "thread") {
+      return handleGetThread(event, doc, TABLE_NAME, requestId);
+    }
+    if (method === "POST" && segments.length === 4 && segments[2] === "thread" && segments[3] === "messages") {
+      return handlePostThreadMessage(event, doc, TABLE_NAME, requestId);
+    }
+    if (
+      method === "POST" &&
+      segments.length === 5 &&
+      segments[2] === "responses" &&
+      segments[4] === "accept"
+    ) {
+      const responseId = segments[3];
+      return handleAcceptResponse(event, doc, TABLE_NAME, requestId, responseId);
+    }
+  }
+
+  return json(404, {
+    error: "Route not found",
+    routeKey: `${method} ${event.rawPath}`,
+  });
+}
+
+const staticRoutes: Record<string, RoutedHandler> = {
   "GET /profiles/me": handleGetProfileMe,
   "PUT /profiles/me": handlePutProfileMe,
-  "GET /requests": async (e) => notImplemented(getRouteKey(e)),
-  "POST /requests": async (e) => notImplemented(getRouteKey(e)),
-  "GET /leaderboard": async (e) => notImplemented(getRouteKey(e)),
 };
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
+  const req = event as ApiGatewayEvent;
+
   if (event.requestContext.http.method === "OPTIONS") {
     return { statusCode: 204, headers: CORS_HEADERS, body: "" };
   }
 
-  const routeKey = getRouteKey(event);
-  const routeHandler = routes[routeKey];
-  if (!routeHandler) {
-    return json(404, { error: "Route not found", routeKey });
-  }
+  const routeKey = `${event.requestContext.http.method} ${event.rawPath}`;
 
   try {
-    return await routeHandler(event);
+    const staticHandler = staticRoutes[routeKey];
+    if (staticHandler) {
+      return await staticHandler(req);
+    }
+    return await routeRequest(req);
   } catch (err) {
-    console.error(routeKey, err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    const name =
+      err && typeof err === "object" && "name" in err
+        ? String((err as { name: string }).name)
+        : "Error";
+    console.error(routeKey, name, message, err);
     return json(500, {
       error: "Internal server error",
-      message: err instanceof Error ? err.message : "Unknown error",
+      message: `${name}: ${message}`,
     });
   }
 };
