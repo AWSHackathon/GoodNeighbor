@@ -18,6 +18,12 @@ import {
 } from "./geofence.js";
 import type { ProfileRecord, UserProfile } from "./handler-types.js";
 import { currentIsoWeekId } from "./iso-week.js";
+import {
+  paginateLeaderboardEntries,
+  parseLeaderboardLimit,
+  parseLeaderboardPage,
+  sortLeaderboardRows,
+} from "./leaderboard-paginate.js";
 import { incrementUserStats } from "./profile-stats.js";
 import type { ApiGatewayEvent } from "./event.js";
 import { getSub, parseJsonBody } from "./event.js";
@@ -745,21 +751,13 @@ export async function handleGetLeaderboard(
     }),
   );
 
-  const rows = (result.Items ?? []) as LeaderRecord[];
-  rows.sort((a, b) => {
-    if (b.hoursContributed !== a.hoursContributed) {
-      return b.hoursContributed - a.hoursContributed;
-    }
-    return b.requestsCompleted - a.requestsCompleted;
+  const rows = sortLeaderboardRows((result.Items ?? []) as LeaderRecord[]);
+  const page = parseLeaderboardPage(event.queryStringParameters?.page);
+  const limit = parseLeaderboardLimit(event.queryStringParameters?.limit);
+  const { entries, pagination } = paginateLeaderboardEntries(rows, {
+    page,
+    limit,
   });
-
-  const entries = rows.map((row, index) => ({
-    rank: index + 1,
-    userSub: row.userSub,
-    displayName: row.displayName,
-    requestsCompleted: row.requestsCompleted,
-    hoursContributed: row.hoursContributed,
-  }));
 
   return json(200, {
     neighborhood,
@@ -767,6 +765,7 @@ export async function handleGetLeaderboard(
     period,
     weekId: period === "week" ? weekId : undefined,
     entries,
+    pagination,
     updatedAt: new Date().toISOString(),
   });
 }
