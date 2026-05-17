@@ -1,11 +1,46 @@
-import { defineAuth } from "@aws-amplify/backend";
+import { defineAuth, secret } from "@aws-amplify/backend";
+import type { AmplifyAuthProps } from "@aws-amplify/backend-auth";
+
+type ExternalProviders = NonNullable<
+  AmplifyAuthProps["loginWith"]["externalProviders"]
+>;
 
 /**
- * Cognito User Pool + Identity Pool (guest + authenticated).
- * Google OAuth is configured in Phase 1 via Hosted UI secrets.
+ * Cognito User Pool + Hosted UI (Google primary, email secondary).
+ * Set secrets before sandbox: npx ampx sandbox secret set GOOGLE_CLIENT_ID
  */
+const externalProviders = {
+  google: {
+    clientId: secret("GOOGLE_CLIENT_ID"),
+    clientSecret: secret("GOOGLE_CLIENT_SECRET"),
+    attributeMapping: {
+      email: "email",
+      givenName: "given_name",
+      familyName: "family_name",
+    },
+  },
+  // Required at runtime for Google OAuth; omitted from factory TS types.
+  domainPrefix: "good-neighbor-hack2026",
+  callbackUrls: [
+    "http://localhost:3000/login",
+    "http://127.0.0.1:3000/login",
+  ],
+  logoutUrls: ["http://localhost:3000/", "http://127.0.0.1:3000/"],
+} as ExternalProviders;
+
 export const auth = defineAuth({
   loginWith: {
     email: true,
+    externalProviders,
+  },
+  userAttributes: {
+    email: {
+      required: true,
+      mutable: true,
+    },
+    fullname: {
+      required: false,
+      mutable: true,
+    },
   },
 });
