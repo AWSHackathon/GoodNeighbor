@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 -p 3000",
     "lint": "next lint",
-    "sandbox": "npx ampx sandbox"
+    "sandbox": "npm install --prefix amplify && npx ampx sandbox"
   },
   "engines": {
     "node": ">=20"
