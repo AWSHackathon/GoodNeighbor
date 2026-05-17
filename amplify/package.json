@@ -2,6 +2,8 @@
   "type": "module",
   "dependencies": {
     "@aws-amplify/backend": "^1.16.0",
+    "@aws-sdk/client-dynamodb": "^3.812.0",
+    "@aws-sdk/lib-dynamodb": "^3.812.0",
     "aws-cdk-lib": "^2.189.0",
     "constructs": "^10.4.2"
   }
