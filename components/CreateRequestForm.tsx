@@ -4,14 +4,21 @@ import { useState } from "react";
 import { createRequest } from "@/lib/api/client";
 import { ensureUserProfile } from "@/lib/auth/profile";
 import { getIdToken } from "@/lib/auth/session";
-import type { Coordinates } from "@/lib/types/domain";
+import type { Coordinates, PublicHelpRequest } from "@/lib/types/domain";
 
 type CreateRequestFormProps = {
   location: Coordinates | null;
   pickMode: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => void;
+  onCreated: (created: PublicHelpRequest, postedAt: Coordinates) => void;
 };
+
+const SUGGESTED_TITLES = [
+  "Need help moving boxes",
+  "Volunteer ride to appointment",
+  "Grocery pickup",
+  "Yard work this weekend",
+];
 
 export function CreateRequestForm({
   location,
@@ -45,7 +52,7 @@ export function CreateRequestForm({
     try {
       await ensureUserProfile();
       const token = await getIdToken();
-      await createRequest(token, {
+      const created = await createRequest(token, {
         title: title.trim(),
         description: description.trim(),
         trueLat: location.lat,
@@ -56,7 +63,7 @@ export function CreateRequestForm({
       setDescription("");
       setMeetingPlaceLabel("");
       setFormOpen(false);
-      onCreated();
+      onCreated({ ...created, isOwn: true }, location);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create request");
     } finally {
@@ -71,7 +78,7 @@ export function CreateRequestForm({
         onClick={() => setFormOpen(true)}
         className="w-full rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700"
       >
-        Post a help request
+        Post a volunteer help request
       </button>
     );
   }
@@ -82,26 +89,28 @@ export function CreateRequestForm({
       className="space-y-3 rounded-lg border border-teal-200 bg-teal-50/50 p-4"
     >
       <p className="text-xs text-slate-600">
+        Ask neighbors to volunteer for a task.{" "}
         {pickMode
-          ? "Click anywhere on the map (left panel) to move the orange pin, then submit."
-          : "Waiting for map… allow location or enter a ZIP on the map first."}
+          ? "Click the map (left) to set the orange pin where help is needed."
+          : "Allow location or enter a ZIP on the map, then click to place your pin."}
       </p>
       {location && (
         <p className="text-xs font-medium text-amber-800">
-          Pin set at {location.lat.toFixed(4)}, {location.lng.toFixed(4)} — public
-          view will be approximate (~400–800m).
+          Request pin set — neighbors will see a teal pin in this approximate area
+          (~400–800 m), not your exact address.
         </p>
       )}
+      <TitleSuggestions onPick={setTitle} />
       <input
         type="text"
-        placeholder="Title (e.g. Need groceries pickup)"
+        placeholder="Title (what do you need help with?)"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
         required
       />
       <textarea
-        placeholder="What do you need help with?"
+        placeholder="Describe the task, timing, and anything volunteers should know"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         rows={3}
@@ -110,7 +119,7 @@ export function CreateRequestForm({
       />
       <input
         type="text"
-        placeholder="Meeting place hint (optional, keep vague)"
+        placeholder="Meeting place hint (optional, keep vague — e.g. near Safeway)"
         value={meetingPlaceLabel}
         onChange={(e) => setMeetingPlaceLabel(e.target.value)}
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -133,5 +142,22 @@ export function CreateRequestForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function TitleSuggestions({ onPick }: { onPick: (t: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {SUGGESTED_TITLES.map((suggestion) => (
+        <button
+          key={suggestion}
+          type="button"
+          onClick={() => onPick(suggestion)}
+          className="rounded-full border border-teal-300 bg-white px-2.5 py-0.5 text-xs text-teal-800 hover:bg-teal-100"
+        >
+          {suggestion}
+        </button>
+      ))}
+    </div>
   );
 }
