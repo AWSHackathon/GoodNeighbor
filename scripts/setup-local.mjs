@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
@@ -23,9 +23,43 @@ if (!existsSync(outputsLocal) && existsSync(outputsExample)) {
   );
 }
 
+function getApiEndpointFromOutputs() {
+  if (!existsSync(outputsLocal)) return null;
+  try {
+    const outputs = JSON.parse(readFileSync(outputsLocal, "utf8"));
+    const api = outputs?.custom?.API;
+    if (!api || typeof api !== "object") return null;
+    const first = Object.values(api)[0];
+    const endpoint = first?.endpoint;
+    if (typeof endpoint !== "string" || endpoint.includes("REPLACE")) {
+      return null;
+    }
+    return endpoint.replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+const apiEndpoint = getApiEndpointFromOutputs();
+if (apiEndpoint && existsSync(envLocal)) {
+  let env = readFileSync(envLocal, "utf8");
+  const line = `NEXT_PUBLIC_API_URL=${apiEndpoint}`;
+  if (/^NEXT_PUBLIC_API_URL=/m.test(env)) {
+    env = env.replace(/^NEXT_PUBLIC_API_URL=.*$/m, line);
+  } else {
+    env = `${env.trimEnd()}\n${line}\n`;
+  }
+  writeFileSync(envLocal, env);
+  console.log(`Set NEXT_PUBLIC_API_URL from amplify_outputs.json`);
+}
+
 console.log("\nLocal dev:");
 console.log("  npm run dev");
 console.log("  http://127.0.0.1:3000");
+console.log("\nPhase 1 auth + API:");
+console.log("  npx ampx sandbox secret set GOOGLE_CLIENT_ID");
+console.log("  npx ampx sandbox secret set GOOGLE_CLIENT_SECRET");
+console.log("  npm run sandbox");
 console.log("\nAmazon Location map:");
 console.log("  Set NEXT_PUBLIC_AMAZON_LOCATION_API_KEY in .env.local, or");
-console.log("  npm run sandbox  # deploys Cognito + GoodNeighborMap");
+console.log("  npm run sandbox  # deploys Cognito + DynamoDB + HTTP API + map");
