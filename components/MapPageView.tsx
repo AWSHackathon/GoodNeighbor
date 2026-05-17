@@ -87,9 +87,9 @@ export function MapPageView() {
   }, []);
 
   const handleLocationResolved = useCallback(
-    async (resolved: ResolvedLocation, displayPin: Coordinates) => {
+    async (resolved: ResolvedLocation, _mapCenter: Coordinates) => {
       setLocation(resolved);
-      setMapCenter(displayPin);
+      setMapCenter({ lat: resolved.lat, lng: resolved.lng });
 
       try {
         const token = await getIdToken();
