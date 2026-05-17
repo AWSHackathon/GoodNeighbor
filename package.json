@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "setup": "npm install && node scripts/setup-local.mjs",
+    "dev": "next dev --hostname 127.0.0.1 -p 3000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --hostname 127.0.0.1 -p 3000",
     "lint": "next lint"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "next": "^15.3.2",

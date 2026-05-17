@@ -39,11 +39,13 @@ See [docs/PLAN.md](docs/PLAN.md) for the full architecture and implementation ph
 ## Local development
 
 ```bash
-npm install
+npm run setup   # install deps + create .env.local from .env.example
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Use **Preview map** on `/login` to reach `/map` without Cognito (Phase 0).
+
+Mock API (leaderboard): `GET http://127.0.0.1:3000/api/leaderboard?neighborhood=capitol-hill&period=all`
 
 | Route | Description |
 |-------|-------------|
