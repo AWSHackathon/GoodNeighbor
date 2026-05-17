@@ -9,6 +9,7 @@ export interface UserProfile {
   zipCode?: string;
   lat?: number;
   lng?: number;
+  locationSource?: "gps" | "zip" | "ip";
   createdAt: string;
   updatedAt?: string;
 }
