@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { listRequestsInArea } from "@/lib/api/client";
-import { getUserSubFromIdToken } from "@/lib/auth/jwt";
 import { getIdToken } from "@/lib/auth/session";
-import { resolveUserDisplayPin } from "@/lib/location/displayPin";
-import type { UserDisplayPin } from "@/lib/location/displayPin";
+import {
+  userMapPinFromResolved,
+  type UserDisplayPin,
+} from "@/lib/location/displayPin";
 import {
   applyMapPinLayers,
   clearUserLocationLayer,
@@ -326,18 +327,7 @@ export function NeighborhoodMap({
       const resolved = resolvedFromProfile(p);
       setLocation(resolved);
 
-      let pin: UserDisplayPin;
-      try {
-        const token = await getIdToken();
-        const userSub = getUserSubFromIdToken(token);
-        pin = await resolveUserDisplayPin(resolved.lat, resolved.lng, userSub);
-      } catch {
-        pin = {
-          lat: resolved.lat,
-          lng: resolved.lng,
-          bufferRadiusMeters: 0,
-        };
-      }
+      const pin = userMapPinFromResolved(resolved);
 
       displayPinRef.current = pin;
       setDisplayPin(pin);
@@ -362,8 +352,8 @@ export function NeighborhoodMap({
       }
 
       onLocationResolvedRef.current?.(resolved, {
-        lat: pin.lat,
-        lng: pin.lng,
+        lat: resolved.lat,
+        lng: resolved.lng,
       });
 
       const config = await resolvePinnedMapConfig();
@@ -371,7 +361,11 @@ export function NeighborhoodMap({
         setStatus("needs-config");
         return;
       }
-      await initMap({ lat: pin.lat, lng: pin.lng }, config, pin);
+      await initMap(
+        { lat: resolved.lat, lng: resolved.lng },
+        config,
+        pin,
+      );
     },
     [initMap, resolvePinnedMapConfig, refreshMapLayers, resolvedFromProfile, fetchRequests],
   );
@@ -381,24 +375,13 @@ export function NeighborhoodMap({
       setLocation(resolved);
       setStatus("loading");
 
-      let pin: UserDisplayPin;
-      try {
-        const token = await getIdToken();
-        const userSub = getUserSubFromIdToken(token);
-        pin = await resolveUserDisplayPin(resolved.lat, resolved.lng, userSub);
-      } catch {
-        pin = {
-          lat: resolved.lat,
-          lng: resolved.lng,
-          bufferRadiusMeters: 0,
-        };
-      }
+      const pin = userMapPinFromResolved(resolved);
 
       displayPinRef.current = pin;
       setDisplayPin(pin);
       onLocationResolvedRef.current?.(resolved, {
-        lat: pin.lat,
-        lng: pin.lng,
+        lat: resolved.lat,
+        lng: resolved.lng,
       });
 
       const config = await resolvePinnedMapConfig();
@@ -407,7 +390,11 @@ export function NeighborhoodMap({
         return;
       }
 
-      await initMap({ lat: pin.lat, lng: pin.lng }, config, pin);
+      await initMap(
+        { lat: resolved.lat, lng: resolved.lng },
+        config,
+        pin,
+      );
     },
     [initMap, resolvePinnedMapConfig],
   );
@@ -572,7 +559,7 @@ export function NeighborhoodMap({
         <p className="mt-2 text-xs text-slate-500">
           Amazon Location · {requests.length} request
           {requests.length === 1 ? "" : "s"} in area
-          {displayPin ? " · blue = your approximate area" : ""}
+          {displayPin ? " · blue = you (only you see this)" : ""}
           {pickedPin ? " · orange = new request location" : ""}
         </p>
       )}
