@@ -2,7 +2,7 @@
  * HTTP API client (docs/PLAN.md — Lambda API).
  */
 
-import { resolveApiBaseUrl } from "@/lib/api/config";
+import { resolveDeployedApiBaseUrl } from "@/lib/api/config";
 import type {
   CreateHelpRequestInput,
   HelpRequestResponse,
@@ -16,20 +16,14 @@ let cachedApiBaseUrl: string | null = null;
 
 async function getApiBaseUrl(): Promise<string> {
   if (cachedApiBaseUrl) return cachedApiBaseUrl;
-  if (process.env.NEXT_PUBLIC_API_URL?.trim()) {
-    cachedApiBaseUrl = process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/$/, "");
-    return cachedApiBaseUrl;
-  }
   try {
     const mod = await import("@/amplify_outputs.json");
     const outputs = mod.default ?? mod;
-    cachedApiBaseUrl = resolveApiBaseUrl(outputs);
-    return cachedApiBaseUrl;
+    cachedApiBaseUrl = resolveDeployedApiBaseUrl(outputs);
   } catch {
-    throw new Error(
-      "API base URL not configured. Run npm run sandbox or set NEXT_PUBLIC_API_URL.",
-    );
+    cachedApiBaseUrl = resolveDeployedApiBaseUrl();
   }
+  return cachedApiBaseUrl;
 }
 
 async function apiFetch<T>(
