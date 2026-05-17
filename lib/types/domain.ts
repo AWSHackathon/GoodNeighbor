@@ -24,6 +24,8 @@ export interface PublicHelpRequest {
   neighborhood: string;
   status: HelpRequestStatus;
   createdAt: string;
+  /** Present on list when the viewer is the requester. */
+  isOwn?: boolean;
 }
 
 /** POST /requests body — true location never stored on the client after submit. */
@@ -33,6 +35,10 @@ export interface CreateHelpRequestInput {
   trueLat: number;
   trueLng: number;
   meetingPlaceLabel?: string;
+}
+
+export interface FulfillHelpRequestInput {
+  hoursContributed?: number;
 }
 
 export interface HelpRequestResponse {

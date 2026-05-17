@@ -5,25 +5,24 @@
 import { resolveDeployedApiBaseUrl } from "@/lib/api/config";
 import type {
   CreateHelpRequestInput,
+  FulfillHelpRequestInput,
   HelpRequestResponse,
   PrivateThread,
   PublicHelpRequest,
   ThreadMessage,
   UserProfile,
 } from "@/lib/types/domain";
+import type { LeaderboardResponse } from "@/lib/types/leaderboard";
 
-let cachedApiBaseUrl: string | null = null;
-
+/** Always read fresh from amplify_outputs.json (avoids stale URL after sandbox redeploy). */
 async function getApiBaseUrl(): Promise<string> {
-  if (cachedApiBaseUrl) return cachedApiBaseUrl;
   try {
     const mod = await import("@/amplify_outputs.json");
     const outputs = mod.default ?? mod;
-    cachedApiBaseUrl = resolveDeployedApiBaseUrl(outputs);
+    return resolveDeployedApiBaseUrl(outputs);
   } catch {
-    cachedApiBaseUrl = resolveDeployedApiBaseUrl();
+    return resolveDeployedApiBaseUrl();
   }
-  return cachedApiBaseUrl;
 }
 
 async function apiFetch<T>(
@@ -47,7 +46,18 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`API ${res.status}: ${text}`);
+    try {
+      const parsed = JSON.parse(text) as { error?: string; message?: string };
+      const detail = [parsed.error, parsed.message].filter(Boolean).join(": ");
+      if (detail) {
+        throw new Error(detail);
+      }
+    } catch (e) {
+      if (e instanceof Error && !e.message.startsWith("API ")) {
+        throw e;
+      }
+    }
+    throw new Error(`Request failed (${res.status}). ${text.slice(0, 200)}`);
   }
 
   return res.json() as Promise<T>;
@@ -137,4 +147,36 @@ export async function postThreadMessage(
     authToken,
     body: JSON.stringify({ body }),
   });
+}
+
+export async function listRequestResponses(
+  authToken: string,
+  requestId: string,
+): Promise<HelpRequestResponse[]> {
+  return apiFetch<HelpRequestResponse[]>(`/requests/${requestId}/responses`, {
+    authToken,
+  });
+}
+
+export async function fulfillRequest(
+  authToken: string,
+  requestId: string,
+  body?: FulfillHelpRequestInput,
+): Promise<PublicHelpRequest> {
+  return apiFetch<PublicHelpRequest>(`/requests/${requestId}/fulfill`, {
+    method: "POST",
+    authToken,
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
+export async function getLeaderboard(
+  authToken: string,
+  params: { neighborhood: string; period?: "all" | "week" },
+): Promise<LeaderboardResponse> {
+  const q = new URLSearchParams({
+    neighborhood: params.neighborhood,
+    period: params.period ?? "all",
+  });
+  return apiFetch<LeaderboardResponse>(`/leaderboard?${q}`, { authToken });
 }
