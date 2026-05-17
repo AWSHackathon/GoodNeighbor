@@ -1,3 +1,21 @@
+/** Confirms the style descriptor URL works for this API key (v2 only supports certain names, e.g. Standard). */
+export async function assertMapStyleAccess(
+  region: string,
+  styleName: string,
+  apiKey: string,
+): Promise<void> {
+  const url = `https://maps.geo.${region}.amazonaws.com/v2/styles/${styleName}/descriptor?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url);
+  if (res.ok) return;
+
+  const detail = await res.text().catch(() => res.statusText);
+  throw new Error(
+    `Amazon Location style "${styleName}" is not available for this API key (HTTP ${res.status}). ` +
+      `Use style "Standard" or run npm run sandbox and sign in for GoodNeighborMap tiles. ` +
+      (detail ? `AWS: ${detail.slice(0, 120)}` : ""),
+  );
+}
+
 /**
  * Probes tile access for an Amazon Location API key before MapLibre loads tiles.
  * Style descriptors can succeed while GetTile is denied on a mis-scoped key.
