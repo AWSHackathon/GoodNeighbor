@@ -4,35 +4,60 @@
 
 | Resource | Purpose |
 |----------|---------|
-| `auth/resource.ts` | Cognito User Pool + Identity Pool (guest + signed-in) |
-| `backend.ts` | **GoodNeighborMap** on Amazon Location Service (`VectorEsriNavigation`) |
-
-Guest and authenticated IAM roles can call `geo:GetMap*` on the map.
+| `auth/resource.ts` | Cognito User Pool — **Google OAuth** (primary) + **email** |
+| `backend.ts` | DynamoDB `GoodNeighbor` table, HTTP API + Lambda, Amazon Location map |
+| `functions/api/` | Lambda handler — **Phase 1:** `GET/PUT /profiles/me` |
 
 ## Deploy (personal sandbox)
 
 From the repo root (AWS credentials required):
 
+### 1. Google OAuth secrets
+
+Create a [Google OAuth Web client](https://console.cloud.google.com/apis/credentials), then:
+
+```bash
+npx ampx sandbox secret set GOOGLE_CLIENT_ID
+npx ampx sandbox secret set GOOGLE_CLIENT_SECRET
+```
+
+After the first sandbox deploy, add this **Authorized redirect URI** in Google Cloud Console (replace region/domain if different):
+
+```text
+https://good-neighbor-hack2026.auth.<region>.amazoncognito.com/oauth2/idpresponse
+```
+
+Find the exact domain in the Cognito console or `amplify_outputs.json` → `auth.oauth.domain`.
+
+### 2. Deploy
+
 ```bash
 npm run sandbox
 ```
 
-This writes `amplify_outputs.json` for the Next.js app. The map on `/map` uses Amplify Geo + `maplibre-gl-js-amplify`.
+This writes `amplify_outputs.json` and updates `.env.local` with `NEXT_PUBLIC_API_URL` (via `npm run setup`).
 
-## API key alternative (no sandbox)
-
-1. In [Amazon Location Service](https://console.aws.amazon.com/location/home), create a **map** (e.g. style **Standard** for API keys).
-2. Create a **place index** (Places) if you want ZIP geocode on `/map`.
-3. Create an **API key** with:
-   - **Maps** resource `arn:aws:geo-maps:<region>::provider/default` and actions **`geo-maps:*`** (or at least tile + style actions). A key scoped only to **Places / Geocode** loads the style descriptor but returns **403** on tiles.
-   - Optional: **Places** resource with **Geocode** for ZIP lookup on `/map`.
-4. Add to `.env.local`:
+### 3. Local app
 
 ```bash
-NEXT_PUBLIC_AMAZON_LOCATION_API_KEY=your-key
-NEXT_PUBLIC_AWS_REGION=us-west-2
-NEXT_PUBLIC_LOCATION_MAP_STYLE=Standard
-AMAZON_LOCATION_API_KEY=your-key
+npm run dev
 ```
 
-Restart `npm run dev` and open `/map`.
+Open [http://127.0.0.1:3000/login](http://127.0.0.1:3000/login) — sign in with Google or email. Profiles are stored in DynamoDB (`USER#<sub>` / `PROFILE`).
+
+## API (authenticated)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/profiles/me` | Load or create profile from JWT claims |
+| PUT | `/profiles/me` | Update displayName, neighborhood, zipCode, lat/lng |
+
+Use the Cognito **ID token** in `Authorization: Bearer <token>`.
+
+## Email-only (skip Google temporarily)
+
+Comment out `google` and `externalProviders` in `auth/resource.ts` if secrets are not ready; email sign-up still works.
+
+## Map
+
+Guest and authenticated IAM roles can call `geo:GetMap*` on **GoodNeighborMap**. Or use an Amazon Location API key in `.env.local` (see root README).
