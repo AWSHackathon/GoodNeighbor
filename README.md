@@ -6,7 +6,7 @@
 
 The map centers on the user’s area—no fixed demo neighborhood. Resolution order: **device GPS** (browser permission) → **IP geolocation** → **manual ZIP** if GPS is denied or IP is wrong. Details are in [docs/PLAN.md](docs/PLAN.md#location-resolution).
 
-**Leaderboard:** The bottom half of `/map` ranks neighbors by **requests completed** and **hours contributed**, scoped to your neighborhood. Use the dropdown to switch **All time** vs **This week**; data refreshes when your neighborhood changes. See [docs/PLAN.md — Leaderboard](docs/PLAN.md#leaderboard).
+**Gratitude Board:** The bottom half of `/map` celebrates neighbors by **requests completed** and **hours contributed**, scoped to your area. Use the dropdown to switch **All time** vs **This week**; data refreshes when your neighborhood changes. See [docs/PLAN.md — Leaderboard](docs/PLAN.md#leaderboard) (API path unchanged).
 
 **Privacy:** Neighbors never see your exact home pin or full address on the map. Request pins use a **buffer zone** (Marketplace-style approximate area). Optional **meeting place** hints stay vague publicly; exact location is shared only in a **private thread** after the requester accepts a helper. See [docs/PLAN.md — Location privacy](docs/PLAN.md#location-privacy).
 
@@ -80,7 +80,7 @@ The `/map` screen uses **MapLibre GL** with **Amazon Location Service** tiles (n
 |-------|-------------|
 | `/` | Landing page with logo |
 | `/login` | Sign in with Google or email (Cognito) |
-| `/map` | Map + create/list requests + neighborhood leaderboard (**request API currently flaky**) |
+| `/map` | Map + create/list requests + Gratitude Board (**request API currently flaky**) |
 | `/requests/[id]/thread` | Private chat after accepting a helper |
 
 ```bash
@@ -128,7 +128,7 @@ Avoid force-pushing `main` unless explicitly agreed by the team.
 
 1. Read [docs/PLAN.md — Current status](docs/PLAN.md#current-status-may-2026).
 2. **Fix request API in dev:** sandbox running → `npm run setup` → restart dev → sign out/in → debug `GET/POST /requests` in browser Network tab.
-3. Verify create → pins on map → respond → accept → thread → fulfill → leaderboard.
+3. Verify create → pins on map → respond → accept → thread → fulfill → Gratitude Board update.
 4. Set Google OAuth secrets if needed: `npx ampx sandbox secret set GOOGLE_CLIENT_ID` (and client secret).
 5. Connect repo to **Amplify Hosting** for a shared demo URL.
 
