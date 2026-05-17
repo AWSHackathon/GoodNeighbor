@@ -20,7 +20,7 @@ export default function LandingPage() {
           Sign in
         </Link>
         <p className="mt-4 text-sm text-slate-500">
-          Sign in with Google or email — profiles stored in DynamoDB
+          Sign in with Google or email
         </p>
       </div>
     </main>
