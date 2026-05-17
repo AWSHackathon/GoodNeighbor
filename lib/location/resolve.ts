@@ -23,7 +23,8 @@ function getBrowserPosition(timeoutMs: number): Promise<GeolocationPosition> {
     navigator.geolocation.getCurrentPosition(resolve, reject, {
       enableHighAccuracy: true,
       timeout: timeoutMs,
-      maximumAge: 60_000,
+      /** Fresh fix on each page load — cached positions can be hundreds of meters off. */
+      maximumAge: 0,
     });
   });
 }
