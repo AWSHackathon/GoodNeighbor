@@ -95,6 +95,7 @@ export function MapPageView() {
           </p>
           <div className="mt-4 min-h-0 flex-1">
             <NeighborhoodMap
+              profile={profile}
               requests={requests}
               onLocationResolved={handleLocationResolved}
               onRequestsChange={setRequests}
